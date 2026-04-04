@@ -1,0 +1,543 @@
+[
+  {
+    "ContainingType": "Arapos.Api.Controllers.AuthDebugController",
+    "Method": "PlatformToken",
+    "RelativePath": "auth-debug/platform-token",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.AuthDebugController",
+    "Method": "TenantToken",
+    "RelativePath": "auth-debug/tenant-token/{slug}",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "slug",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.AuthController",
+    "Method": "TenantPinLogin",
+    "RelativePath": "auth/tenant/pin-login",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "req",
+        "Type": "Arapos.Api.Contracts.Auth.TenantPinLoginRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "Arapos.Api.Contracts.Auth.LoginResponse",
+        "MediaTypes": [
+          "text/plain",
+          "application/json",
+          "text/json"
+        ],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.DebugTenantController",
+    "Method": "Get",
+    "RelativePath": "debug/tenant",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.PlatformPingController",
+    "Method": "Get",
+    "RelativePath": "platform/ping",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.PlatformTenantsController",
+    "Method": "CreateTenant",
+    "RelativePath": "platform/tenants",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "req",
+        "Type": "Arapos.Api.Contracts.Platform.CreateTenantRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.PlatformTenantsController",
+    "Method": "CreateBranch",
+    "RelativePath": "platform/tenants/{tenantId}/branches",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "req",
+        "Type": "Arapos.Api.Contracts.Platform.CreateBranchRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.PlatformTenantsController",
+    "Method": "CreateTenantUser",
+    "RelativePath": "platform/tenants/{tenantId}/users",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "req",
+        "Type": "Arapos.Api.Contracts.Platform.CreateTenantUserRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.ApprovalsController",
+    "Method": "ApproveRefund",
+    "RelativePath": "t/{tenantslug}/approvals/{approvalId}/approve",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "approvalId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.CashierController",
+    "Method": "CloseSession",
+    "RelativePath": "t/{tenantslug}/cashier/{sessionId}/close",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "sessionId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "actualCashCents",
+        "Type": "System.Int32",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.CashierController",
+    "Method": "OpenSession",
+    "RelativePath": "t/{tenantslug}/cashier/open",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "openingCashCents",
+        "Type": "System.Int32",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.InvoicesController",
+    "Method": "Create",
+    "RelativePath": "t/{tenantslug}/invoices",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.InvoicesController",
+    "Method": "GetInvoice",
+    "RelativePath": "t/{tenantslug}/invoices/{invoiceId}",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "invoiceId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.InvoicesController",
+    "Method": "FinalizeInvoice",
+    "RelativePath": "t/{tenantslug}/invoices/{invoiceId}/finalize",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "invoiceId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.InvoicesController",
+    "Method": "AddItem",
+    "RelativePath": "t/{tenantslug}/invoices/{invoiceId}/items",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "invoiceId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "Arapos.Api.Contracts.Invoices.AddInvoiceLineRequest",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.InvoicesController",
+    "Method": "AddPayment",
+    "RelativePath": "t/{tenantslug}/invoices/{invoiceId}/payments",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "invoiceId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "request",
+        "Type": "Arapos.Api.Contracts.Invoices.AddPaymentRequest",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.InvoicesController",
+    "Method": "Refund",
+    "RelativePath": "t/{tenantslug}/invoices/{invoiceId}/refunds",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "invoiceId",
+        "Type": "System.Guid",
+        "IsRequired": true
+      },
+      {
+        "Name": "amountCents",
+        "Type": "System.Int32",
+        "IsRequired": true
+      },
+      {
+        "Name": "tenantslug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.TenantPingController",
+    "Method": "Ping",
+    "RelativePath": "t/{tenantSlug}/ping",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantSlug",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.ProductsController",
+    "Method": "List",
+    "RelativePath": "t/{tenantslug}/products",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantslug",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "q",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "includeInactive",
+        "Type": "System.Boolean",
+        "IsRequired": false
+      },
+      {
+        "Name": "page",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "pageSize",
+        "Type": "System.Int32",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "Arapos.Api.Contracts.Common.PagedResult\u00601[[Arapos.Api.Contracts.Products.ProductListItem, Arapos.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
+        "MediaTypes": [
+          "text/plain",
+          "application/json",
+          "text/json"
+        ],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.ProductsDebugController",
+    "Method": "List",
+    "RelativePath": "t/{tenantSlug}/products-debug",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantSlug",
+        "Type": "",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.ProductsController",
+    "Method": "GetById",
+    "RelativePath": "t/{tenantslug}/products/{id}",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantslug",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "id",
+        "Type": "System.Guid",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "Arapos.Api.Contracts.Products.ProductListItem",
+        "MediaTypes": [
+          "text/plain",
+          "application/json",
+          "text/json"
+        ],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.ServicesController",
+    "Method": "List",
+    "RelativePath": "t/{tenantslug}/services",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantslug",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "q",
+        "Type": "System.String",
+        "IsRequired": false
+      },
+      {
+        "Name": "includeInactive",
+        "Type": "System.Boolean",
+        "IsRequired": false
+      },
+      {
+        "Name": "page",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "pageSize",
+        "Type": "System.Int32",
+        "IsRequired": false
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "Arapos.Api.Contracts.Common.PagedResult\u00601[[Arapos.Api.Contracts.Services.ServiceListItem, Arapos.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
+        "MediaTypes": [
+          "text/plain",
+          "application/json",
+          "text/json"
+        ],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.ServicesController",
+    "Method": "GetById",
+    "RelativePath": "t/{tenantslug}/services/{id}",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "tenantslug",
+        "Type": "System.String",
+        "IsRequired": true
+      },
+      {
+        "Name": "id",
+        "Type": "System.Guid",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": [
+      {
+        "Type": "Arapos.Api.Contracts.Services.ServiceListItem",
+        "MediaTypes": [
+          "text/plain",
+          "application/json",
+          "text/json"
+        ],
+        "StatusCode": 200
+      }
+    ]
+  },
+  {
+    "ContainingType": "Arapos.Api.Controllers.WeatherForecastController",
+    "Method": "Get",
+    "RelativePath": "WeatherForecast",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": [
+      {
+        "Type": "System.Collections.Generic.IEnumerable\u00601[[Arapos.Api.WeatherForecast, Arapos.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
+        "MediaTypes": [
+          "text/plain",
+          "application/json",
+          "text/json"
+        ],
+        "StatusCode": 200
+      }
+    ],
+    "EndpointName": "GetWeatherForecast"
+  }
+]
