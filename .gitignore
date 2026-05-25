@@ -1,0 +1,33 @@
+# Build output
+bin/
+obj/
+RunBuild/
+tempobj/
+objverify/
+dist/
+dist-ssr/
+
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+*.err
+*.out
+
+# Local/user files
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.local
+.dotnet-home/
+
+# OS/editor noise
+.DS_Store
+*.sw?

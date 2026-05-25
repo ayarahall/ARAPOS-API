@@ -1,0 +1,346 @@
+Folder PATH listing
+Volume serial number is 72C4-472C
+C:.
+ª   appsettings.Development.json
+ª   appsettings.json
+ª   Ayapos.Api.csproj
+ª   Ayapos.Api.csproj.user
+ª   Ayapos.Api.http
+ª   Program.cs
+ª   structure.txt
+ª   WeatherForecast.cs
+ª   
++---bin
+ª   +---Debug
+ª       +---net9.0
+ª           ª   appsettings.Development.json
+ª           ª   appsettings.json
+ª           ª   Ayapos.Api.deps.json
+ª           ª   Ayapos.Api.dll
+ª           ª   Ayapos.Api.exe
+ª           ª   Ayapos.Api.pdb
+ª           ª   Ayapos.Api.runtimeconfig.json
+ª           ª   Ayapos.Api.staticwebassets.endpoints.json
+ª           ª   Azure.Core.dll
+ª           ª   Azure.Identity.dll
+ª           ª   Humanizer.dll
+ª           ª   Microsoft.AspNetCore.Authentication.JwtBearer.dll
+ª           ª   Microsoft.AspNetCore.OpenApi.dll
+ª           ª   Microsoft.Bcl.AsyncInterfaces.dll
+ª           ª   Microsoft.Build.Locator.dll
+ª           ª   Microsoft.CodeAnalysis.CSharp.dll
+ª           ª   Microsoft.CodeAnalysis.CSharp.Workspaces.dll
+ª           ª   Microsoft.CodeAnalysis.dll
+ª           ª   Microsoft.CodeAnalysis.Workspaces.dll
+ª           ª   Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.dll
+ª           ª   Microsoft.CodeAnalysis.Workspaces.MSBuild.dll
+ª           ª   Microsoft.Data.SqlClient.dll
+ª           ª   Microsoft.EntityFrameworkCore.Abstractions.dll
+ª           ª   Microsoft.EntityFrameworkCore.Design.dll
+ª           ª   Microsoft.EntityFrameworkCore.dll
+ª           ª   Microsoft.EntityFrameworkCore.Relational.dll
+ª           ª   Microsoft.EntityFrameworkCore.SqlServer.dll
+ª           ª   Microsoft.Extensions.Caching.Abstractions.dll
+ª           ª   Microsoft.Extensions.Caching.Memory.dll
+ª           ª   Microsoft.Extensions.Configuration.Abstractions.dll
+ª           ª   Microsoft.Extensions.DependencyInjection.Abstractions.dll
+ª           ª   Microsoft.Extensions.DependencyInjection.dll
+ª           ª   Microsoft.Extensions.DependencyModel.dll
+ª           ª   Microsoft.Extensions.Logging.Abstractions.dll
+ª           ª   Microsoft.Extensions.Logging.dll
+ª           ª   Microsoft.Extensions.Options.dll
+ª           ª   Microsoft.Extensions.Primitives.dll
+ª           ª   Microsoft.Identity.Client.dll
+ª           ª   Microsoft.Identity.Client.Extensions.Msal.dll
+ª           ª   Microsoft.IdentityModel.Abstractions.dll
+ª           ª   Microsoft.IdentityModel.JsonWebTokens.dll
+ª           ª   Microsoft.IdentityModel.Logging.dll
+ª           ª   Microsoft.IdentityModel.Protocols.dll
+ª           ª   Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+ª           ª   Microsoft.IdentityModel.Tokens.dll
+ª           ª   Microsoft.OpenApi.dll
+ª           ª   Microsoft.SqlServer.Server.dll
+ª           ª   Microsoft.Win32.SystemEvents.dll
+ª           ª   Mono.TextTemplating.dll
+ª           ª   Swashbuckle.AspNetCore.Swagger.dll
+ª           ª   Swashbuckle.AspNetCore.SwaggerGen.dll
+ª           ª   Swashbuckle.AspNetCore.SwaggerUI.dll
+ª           ª   System.ClientModel.dll
+ª           ª   System.CodeDom.dll
+ª           ª   System.Composition.AttributedModel.dll
+ª           ª   System.Composition.Convention.dll
+ª           ª   System.Composition.Hosting.dll
+ª           ª   System.Composition.Runtime.dll
+ª           ª   System.Composition.TypedParts.dll
+ª           ª   System.Configuration.ConfigurationManager.dll
+ª           ª   System.Drawing.Common.dll
+ª           ª   System.Formats.Asn1.dll
+ª           ª   System.IdentityModel.Tokens.Jwt.dll
+ª           ª   System.Memory.Data.dll
+ª           ª   System.Runtime.Caching.dll
+ª           ª   System.Security.Cryptography.ProtectedData.dll
+ª           ª   System.Security.Permissions.dll
+ª           ª   System.Text.Json.dll
+ª           ª   System.Windows.Extensions.dll
+ª           ª   
+ª           +---cs
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---de
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---es
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---fr
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---it
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---ja
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---ko
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---pl
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---pt-BR
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---ru
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---runtimes
+ª           ª   +---unix
+ª           ª   ª   +---lib
+ª           ª   ª       +---net6.0
+ª           ª   ª               Microsoft.Data.SqlClient.dll
+ª           ª   ª               System.Drawing.Common.dll
+ª           ª   ª               
+ª           ª   +---win
+ª           ª   ª   +---lib
+ª           ª   ª       +---net6.0
+ª           ª   ª               Microsoft.Data.SqlClient.dll
+ª           ª   ª               Microsoft.Win32.SystemEvents.dll
+ª           ª   ª               System.Drawing.Common.dll
+ª           ª   ª               System.Runtime.Caching.dll
+ª           ª   ª               System.Security.Cryptography.ProtectedData.dll
+ª           ª   ª               System.Windows.Extensions.dll
+ª           ª   ª               
+ª           ª   +---win-arm
+ª           ª   ª   +---native
+ª           ª   ª           Microsoft.Data.SqlClient.SNI.dll
+ª           ª   ª           
+ª           ª   +---win-arm64
+ª           ª   ª   +---native
+ª           ª   ª           Microsoft.Data.SqlClient.SNI.dll
+ª           ª   ª           
+ª           ª   +---win-x64
+ª           ª   ª   +---native
+ª           ª   ª           Microsoft.Data.SqlClient.SNI.dll
+ª           ª   ª           
+ª           ª   +---win-x86
+ª           ª       +---native
+ª           ª               Microsoft.Data.SqlClient.SNI.dll
+ª           ª               
+ª           +---tr
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---zh-Hans
+ª           ª       Microsoft.CodeAnalysis.CSharp.resources.dll
+ª           ª       Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª           ª       Microsoft.CodeAnalysis.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª           ª       Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª           ª       
+ª           +---zh-Hant
+ª                   Microsoft.CodeAnalysis.CSharp.resources.dll
+ª                   Microsoft.CodeAnalysis.CSharp.Workspaces.resources.dll
+ª                   Microsoft.CodeAnalysis.resources.dll
+ª                   Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.resources.dll
+ª                   Microsoft.CodeAnalysis.Workspaces.resources.dll
+ª                   
++---Contracts
+ª   +---Auth
+ª   ª       LoginResponse.cs
+ª   ª       TenantPinLoginRequest.cs
+ª   ª       
+ª   +---Common
+ª   ª       PagedResult.cs
+ª   ª       
+ª   +---Invoices
+ª   ª       AddInvoiceLineRequest.cs
+ª   ª       AddPaymentRequest.cs
+ª   ª       InvoiceDto.cs
+ª   ª       InvoiceLineDto.cs
+ª   ª       
+ª   +---Platform
+ª   ª       CreateBranchRequest.cs
+ª   ª       CreateTenantRequest.cs
+ª   ª       CreateTenantUserRequest.cs
+ª   ª       
+ª   +---Products
+ª   ª       ProductListItem.cs
+ª   ª       
+ª   +---Services
+ª           ServiceListItem.cs
+ª           
++---Controllers
+ª       AuthController.cs
+ª       AuthDebugController.cs
+ª       DebugTenantController.cs
+ª       InvoicesController.cs
+ª       PlatformPingController.cs
+ª       PlatformTenantsController.cs
+ª       ProductsController.cs
+ª       ProductsDebugController.cs
+ª       ServicesController.cs
+ª       TenantPingController.cs
+ª       WeatherForecastController.cs
+ª       
++---Data
+ª   ª   AyaposDbContext.cs
+ª   ª   AyaposDbContext.Tenancy.cs
+ª   ª   
+ª   +---Entities
+ª           Appointment.cs
+ª           AppointmentItem.cs
+ª           AppSetting.cs
+ª           Branch.cs
+ª           BranchSetting.cs
+ª           Customer.cs
+ª           CustomerLicense.cs
+ª           InventoryMove.cs
+ª           Invoice.cs
+ª           InvoiceItem.cs
+ª           InvoiceSequence.cs
+ª           License.cs
+ª           LicenseActivation.cs
+ª           ManagerApproval.cs
+ª           Payment.cs
+ª           PaymentMethod.cs
+ª           Product.cs
+ª           ProductPrice.cs
+ª           ProductStockSnapshot.cs
+ª           Service.cs
+ª           ServicePrice.cs
+ª           Staff.cs
+ª           Tenant.cs
+ª           User.cs
+ª           UserPin.cs
+ª           UserPinsHistory.cs
+ª           vw_ProductActivePrice.cs
+ª           
++---Migrations
++---obj
+ª   ª   Ayapos.Api.csproj.nuget.dgspec.json
+ª   ª   Ayapos.Api.csproj.nuget.g.props
+ª   ª   Ayapos.Api.csproj.nuget.g.targets
+ª   ª   project.assets.json
+ª   ª   project.nuget.cache
+ª   ª   
+ª   +---Debug
+ª       +---net9.0
+ª           ª   .NETCoreApp,Version=v9.0.AssemblyAttributes.cs
+ª           ª   ApiEndpoints.json
+ª           ª   apphost.exe
+ª           ª   Ayapos.Api.AssemblyInfo.cs
+ª           ª   Ayapos.Api.AssemblyInfoInputs.cache
+ª           ª   Ayapos.Api.assets.cache
+ª           ª   Ayapos.Api.csproj.AssemblyReference.cache
+ª           ª   Ayapos.Api.csproj.BuildWithSkipAnalyzers
+ª           ª   Ayapos.Api.csproj.CoreCompileInputs.cache
+ª           ª   Ayapos.Api.csproj.FileListAbsolute.txt
+ª           ª   Ayapos.Api.csproj.Up2Date
+ª           ª   Ayapos.Api.dll
+ª           ª   Ayapos.Api.GeneratedMSBuildEditorConfig.editorconfig
+ª           ª   Ayapos.Api.genruntimeconfig.cache
+ª           ª   Ayapos.Api.GlobalUsings.g.cs
+ª           ª   Ayapos.Api.MvcApplicationPartsAssemblyInfo.cache
+ª           ª   Ayapos.Api.MvcApplicationPartsAssemblyInfo.cs
+ª           ª   Ayapos.Api.pdb
+ª           ª   staticwebassets.build.endpoints.json
+ª           ª   staticwebassets.build.json
+ª           ª   staticwebassets.references.upToDateCheck.txt
+ª           ª   staticwebassets.removed.txt
+ª           ª   
+ª           +---EndpointInfo
+ª           ª       Ayapos.Api.json
+ª           ª       Ayapos.Api.OpenApiFiles.cache
+ª           ª       
+ª           +---ref
+ª           ª       Ayapos.Api.dll
+ª           ª       
+ª           +---refint
+ª           ª       Ayapos.Api.dll
+ª           ª       
+ª           +---staticwebassets
+ª                   msbuild.build.Ayapos.Api.props
+ª                   msbuild.buildMultiTargeting.Ayapos.Api.props
+ª                   msbuild.buildTransitive.Ayapos.Api.props
+ª                   
++---Properties
+ª       launchSettings.json
+ª       
++---Security
+ª       AuthPolicies.cs
+ª       JwtOptions.cs
+ª       JwtTokenService.cs
+ª       RequireBranchAttribute.cs
+ª       
++---Tenancy
+    ª   BranchMiddleware.cs
+    ª   HttpTenantContext.cs
+    ª   ITenantContext.cs
+    ª   TenantRouteMiddleware.cs
+    ª   
+    +---Filters
+            RequireBranchHeaderAttribute.cs
+            
