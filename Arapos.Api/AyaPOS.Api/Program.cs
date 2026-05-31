@@ -216,5 +216,8 @@ app.UseAuthorization();
 // Branch middleware (مرة واحدة فقط) - إذا عندك BranchMiddleware فعلاً استخدمي واحد فقط
 app.UseMiddleware<BranchMiddleware>();
 
+app.MapGet("/api/health", () => Results.Ok(new { ok = true, nowUtc = DateTime.UtcNow }))
+   .AllowAnonymous();
+
 app.MapControllers();
 app.Run();

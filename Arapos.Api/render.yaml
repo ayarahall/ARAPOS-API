@@ -1,0 +1,33 @@
+databases:
+  - name: ayapos-db
+    plan: free
+    databaseName: ayapos
+    user: ayapos
+
+services:
+  - type: web
+    name: ayapos-api
+    env: docker
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ayapos-db
+          property: connectionString
+      - key: Jwt__Issuer
+        value: AYAPOS
+      - key: Jwt__Audience
+        value: AYAPOS
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Jwt__SigningKey
+        generateValue: true
+      - key: OwnerBootstrap__Enabled
+        sync: false
+      - key: OwnerBootstrap__Username
+        sync: false
+      - key: OwnerBootstrap__Password
+        sync: false
