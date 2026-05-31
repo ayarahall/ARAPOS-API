@@ -5,6 +5,9 @@ public sealed class AppointmentScheduleColumnDto
     public Guid? UserId { get; init; }
     public string ResourceName { get; init; } = "";
     public string Role { get; init; } = "";
+    public string? AppointmentColor { get; init; }
     public bool IsUnassigned { get; init; }
     public List<AppointmentScheduleEntryDto> Items { get; init; } = [];
 }
+
+

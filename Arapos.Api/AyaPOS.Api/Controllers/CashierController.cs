@@ -19,6 +19,8 @@ namespace Ayapos.Api.Controllers;
 [RequireBranchHeader]
 public class CashierController : ControllerBase
 {
+    private static readonly TimeZoneInfo BusinessTimeZone = ResolveBusinessTimeZone();
+
     private readonly AyaposDbContext _db;
     private readonly ITenantContext _tenant;
 
@@ -96,8 +98,9 @@ public class CashierController : ControllerBase
 
         var tenantId = _tenant.TenantId.Value;
         var branchId = _tenant.BranchId.Value;
-        var startOfDayUtc = DateTime.UtcNow.Date;
-        var endOfDayUtc = startOfDayUtc.AddDays(1);
+        var startOfDayDubai = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, BusinessTimeZone).Date;
+        var startOfDayUtc = TimeZoneInfo.ConvertTimeToUtc(startOfDayDubai, BusinessTimeZone);
+        var endOfDayUtc = TimeZoneInfo.ConvertTimeToUtc(startOfDayDubai.AddDays(1), BusinessTimeZone);
 
         var invoicesQuery = _db.Invoices
             .AsNoTracking()
@@ -218,6 +221,11 @@ public class CashierController : ControllerBase
         });
     }
 
+    private static TimeZoneInfo ResolveBusinessTimeZone()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Arabian Standard Time"); }
+        catch (TimeZoneNotFoundException) { return TimeZoneInfo.FindSystemTimeZoneById("Asia/Dubai"); }
+    }
     [HttpPost("open")]
     public async Task<IActionResult> OpenSession([FromBody] OpenCashierSessionRequest request, CancellationToken ct)
     {
@@ -280,7 +288,7 @@ public class CashierController : ControllerBase
         session.TotalCardCents = metrics.TotalCardCents;
         session.TotalTransferCents = metrics.TotalTransferCents;
         session.TotalRefundCents = metrics.TotalRefundCents;
-        session.ExpectedCashCents = session.OpeningCashCents + session.TotalCashCents - session.TotalRefundCents;
+        session.ExpectedCashCents = session.OpeningCashCents + session.TotalCashCents - session.TotalRefundCents - metrics.CashExpenseCents;
         session.ActualCashCents = request.ActualCashCents;
         session.DifferenceCents = session.ActualCashCents - session.ExpectedCashCents;
         session.DiscrepancyReason = string.IsNullOrWhiteSpace(request.DiscrepancyReason) ? null : request.DiscrepancyReason.Trim();
@@ -315,10 +323,11 @@ public class CashierController : ControllerBase
             TotalCardCents = metrics.TotalCardCents,
             TotalTransferCents = metrics.TotalTransferCents,
             TotalRefundCents = metrics.TotalRefundCents,
-            ExpectedCashCents = session.OpeningCashCents + metrics.TotalCashCents - metrics.TotalRefundCents,
+            CashExpenseCents = metrics.CashExpenseCents,
+            ExpectedCashCents = session.OpeningCashCents + metrics.TotalCashCents - metrics.TotalRefundCents - metrics.CashExpenseCents,
             ActualCashCents = session.ActualCashCents,
             DifferenceCents = session.IsClosed
-                ? session.ActualCashCents - (session.OpeningCashCents + metrics.TotalCashCents - metrics.TotalRefundCents)
+                ? session.ActualCashCents - (session.OpeningCashCents + metrics.TotalCashCents - metrics.TotalRefundCents - metrics.CashExpenseCents)
                 : 0,
             DiscrepancyReason = session.DiscrepancyReason,
             SalesInvoiceCount = metrics.SalesInvoiceCount,
@@ -414,6 +423,18 @@ public class CashierController : ControllerBase
                     i.BranchId == branchId))
             .SumAsync(r => (int?)r.AmountCents, ct) ?? 0;
 
+        var cashExpenses = await _db.BranchExpenses
+            .AsNoTracking()
+            .Where(e =>
+                e.TenantId == tenantId &&
+                e.BranchId == branchId &&
+                e.PaymentMethod == "cash" &&
+                (e.Status == "approved" || e.Status == "paid") &&
+                e.PaidAt >= openedAt &&
+                e.PaidAt <= sessionEnd)
+            .SumAsync(e => (decimal?)e.Amount, ct) ?? 0m;
+        var cashExpenseCents = (int)Math.Round(cashExpenses * 100m, MidpointRounding.AwayFromZero);
+
         return new SessionMetrics
         {
             SalesInvoiceCount = salesInvoiceCount,
@@ -422,6 +443,7 @@ public class CashierController : ControllerBase
             TotalCashCents = payments.Where(p => p.Method == PaymentMethod.Cash).Sum(p => p.AmountCents),
             TotalCardCents = payments.Where(p => p.Method == PaymentMethod.Card).Sum(p => p.AmountCents),
             TotalTransferCents = payments.Where(p => p.Method == PaymentMethod.BankTransfer).Sum(p => p.AmountCents),
+            CashExpenseCents = cashExpenseCents,
             TotalRefundCents = refunds
         };
     }
@@ -434,6 +456,7 @@ public class CashierController : ControllerBase
         public int TotalCashCents { get; init; }
         public int TotalCardCents { get; init; }
         public int TotalTransferCents { get; init; }
+        public int CashExpenseCents { get; init; }
         public int TotalRefundCents { get; init; }
     }
 }

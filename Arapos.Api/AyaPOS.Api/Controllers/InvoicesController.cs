@@ -665,6 +665,18 @@ public sealed class InvoicesController : ControllerBase
             ? "Paid"
             : "PartiallyPaid";
 
+        if (request.AppointmentId is not null)
+        {
+            var appointment = await _db.Appointments
+                .FirstOrDefaultAsync(x =>
+                    x.Id == request.AppointmentId.Value &&
+                    x.TenantId == tenantId &&
+                    x.BranchId == branchId &&
+                    x.CustomerId == invoice.CustomerId, ct);
+
+            if (appointment is not null && appointment.Status is not "cancelled" and not "no_show")
+                appointment.Status = invoice.Status == "Paid" ? "completed" : "checked_in";
+        }
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 

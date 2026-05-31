@@ -20,6 +20,7 @@ namespace Ayapos.Api.Controllers;
 public sealed class ExpensesController : ControllerBase
 {
     private static readonly string[] AllowedStatuses = ["draft", "submitted", "approved", "paid", "cancelled"];
+    private static readonly string[] AllowedPaymentMethods = ["cash", "card", "transfer"];
 
     private readonly AyaposDbContext _db;
     private readonly ITenantContext _tenant;
@@ -35,6 +36,7 @@ public sealed class ExpensesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<PagedResult<BranchExpenseListItemDto>>> List(
         [FromQuery] string? category,
+        [FromQuery] string? status,
         [FromQuery] string? q,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
@@ -55,6 +57,12 @@ public sealed class ExpensesController : ControllerBase
         {
             var normalizedCategory = category.Trim();
             query = query.Where(x => x.Category == normalizedCategory);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            var normalizedStatus = status.Trim().ToLowerInvariant();
+            query = query.Where(x => x.Status.ToLower() == normalizedStatus);
         }
 
         if (!string.IsNullOrWhiteSpace(q))
@@ -82,6 +90,8 @@ public sealed class ExpensesController : ControllerBase
                 CurrencyCode = x.CurrencyCode,
                 ExpenseDate = x.ExpenseDate,
                 Status = x.Status,
+                PaymentMethod = x.PaymentMethod,
+                PaidAt = x.PaidAt,
                 Notes = x.Notes ?? string.Empty,
                 CreatedAt = x.CreatedAt
             })
@@ -117,6 +127,7 @@ public sealed class ExpensesController : ControllerBase
         var title = request.Title.Trim();
         var category = request.Category.Trim();
         var currencyCode = string.IsNullOrWhiteSpace(request.CurrencyCode) ? "AED" : request.CurrencyCode.Trim().ToUpperInvariant();
+        var normalizedPaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "cash" : request.PaymentMethod.Trim().ToLowerInvariant();
 
         if (title.Length < 2)
             return BadRequest("Title is required.");
@@ -126,6 +137,9 @@ public sealed class ExpensesController : ControllerBase
 
         if (request.Amount <= 0)
             return BadRequest("Amount must be greater than zero.");
+
+        if (!AllowedPaymentMethods.Contains(normalizedPaymentMethod))
+            return BadRequest("Payment method must be cash, card, or transfer.");
 
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         Guid? createdByUserId = Guid.TryParse(userIdClaim, out var parsedUserId) ? parsedUserId : null;
@@ -139,6 +153,7 @@ public sealed class ExpensesController : ControllerBase
             Category = category,
             Amount = request.Amount,
             CurrencyCode = currencyCode,
+            PaymentMethod = normalizedPaymentMethod,
             ExpenseDate = request.ExpenseDate == default ? DateTime.UtcNow : request.ExpenseDate,
             Status = "draft",
             Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
@@ -153,12 +168,14 @@ public sealed class ExpensesController : ControllerBase
     }
 
     [HttpPost("analyze-receipt")]
+    [Consumes("multipart/form-data")]
     [RequestSizeLimit(10_000_000)]
-    public async Task<ActionResult<AnalyzeExpenseReceiptResponse>> AnalyzeReceipt([FromForm] IFormFile? file, CancellationToken ct = default)
+    public async Task<ActionResult<AnalyzeExpenseReceiptResponse>> AnalyzeReceipt([FromForm] AnalyzeReceiptForm request, CancellationToken ct = default)
     {
         if (_tenant.TenantId is null || _tenant.BranchId is null)
             return Unauthorized("Missing tenant or branch.");
 
+        var file = request.File;
         if (file is null || file.Length == 0)
             return BadRequest("Receipt file is required.");
 
@@ -202,6 +219,11 @@ public sealed class ExpensesController : ControllerBase
             return NotFound("Expense not found.");
 
         expense.Status = normalizedStatus;
+        if ((normalizedStatus == "approved" || normalizedStatus == "paid") && expense.PaidAt is null)
+            expense.PaidAt = DateTime.UtcNow;
+        else if (normalizedStatus is "draft" or "submitted" or "cancelled")
+            expense.PaidAt = null;
+
         await _db.SaveChangesAsync(ct);
 
         return Ok(new BranchExpenseListItemDto
@@ -213,8 +235,15 @@ public sealed class ExpensesController : ControllerBase
             CurrencyCode = expense.CurrencyCode,
             ExpenseDate = expense.ExpenseDate,
             Status = expense.Status,
+            PaymentMethod = expense.PaymentMethod,
+            PaidAt = expense.PaidAt,
             Notes = expense.Notes ?? string.Empty,
             CreatedAt = expense.CreatedAt
         });
     }
+}
+
+public sealed class AnalyzeReceiptForm
+{
+    public IFormFile? File { get; init; }
 }

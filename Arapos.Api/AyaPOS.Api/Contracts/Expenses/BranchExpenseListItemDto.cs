@@ -9,6 +9,8 @@ public sealed class BranchExpenseListItemDto
     public string CurrencyCode { get; init; } = "";
     public DateTime ExpenseDate { get; init; }
     public string Status { get; init; } = "";
+    public string PaymentMethod { get; init; } = "cash";
+    public DateTime? PaidAt { get; init; }
     public string Notes { get; init; } = "";
     public DateTime CreatedAt { get; init; }
 }

@@ -20,6 +20,10 @@ public partial class BranchExpense
 
     public string Status { get; set; } = null!;
 
+    public string PaymentMethod { get; set; } = "cash";
+
+    public DateTime? PaidAt { get; set; }
+
     public string? Notes { get; set; }
 
     public Guid? CreatedByUserId { get; set; }

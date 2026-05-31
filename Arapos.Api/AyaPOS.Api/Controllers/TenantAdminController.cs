@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Globalization;
 using System.IO.Compression;
 using Ayapos.Api.Contracts.Platform;
@@ -14,6 +14,11 @@ namespace Ayapos.Api.Controllers;
 [ApiController]
 [Route("tenant-admin")]
 [Authorize(Policy = AuthPolicies.TenantAdmin)]
+public sealed class BranchServiceImportForm
+{
+    public IFormFile? File { get; init; }
+}
+
 public sealed class TenantAdminController : ControllerBase
 {
     private readonly AyaposDbContext _db;
@@ -303,28 +308,25 @@ public sealed class TenantAdminController : ControllerBase
         if (!branchExists)
             return NotFound("Branch not found.");
 
-        var items = await _db.BranchUserAssignments
-            .AsNoTracking()
-            .Where(bua => bua.TenantId == tenantId.Value && bua.BranchId == branchId)
-            .Join(
-                _db.Users.AsNoTracking(),
-                bua => bua.UserId,
-                user => user.Id,
-                (bua, user) => new PlatformBranchUserDto
-                {
-                    Id = user.Id,
-                    BranchId = branchId,
-                    Username = user.Username,
-                    Role = user.Role,
-                    IsActive = user.IsActive,
-                    LicensePlan = user.LicensePlan,
-                    LicenseStatus = user.LicenseStatus,
-                    LicenseStartedAt = user.LicenseStartedAt,
-                    LicenseExpiresAt = user.LicenseExpiresAt,
-                    CreatedAt = user.CreatedAt,
-                    Permissions = UserPermissionCatalog.GetEffectivePermissions(user),
-                    PermissionsConfigured = UserPermissionCatalog.HasExplicitPermissions(user)
-                })
+        var items = await (
+            from pin in _db.UserPins.IgnoreQueryFilters().AsNoTracking()
+            join user in _db.Users.AsNoTracking() on pin.UserId equals user.Id
+            where pin.TenantId == tenantId.Value
+            select new PlatformBranchUserDto
+            {
+                Id = user.Id,
+                BranchId = branchId,
+                Username = user.Username,
+                Role = user.Role,
+                IsActive = user.IsActive,
+                LicensePlan = user.LicensePlan,
+                LicenseStatus = user.LicenseStatus,
+                LicenseStartedAt = user.LicenseStartedAt,
+                LicenseExpiresAt = user.LicenseExpiresAt,
+                CreatedAt = user.CreatedAt,
+                Permissions = UserPermissionCatalog.GetEffectivePermissions(user),
+                PermissionsConfigured = UserPermissionCatalog.HasExplicitPermissions(user)
+            })
             .OrderByDescending(user => user.CreatedAt)
             .ToListAsync(ct);
 
@@ -430,12 +432,17 @@ public sealed class TenantAdminController : ControllerBase
         if (tenantId is null)
             return Unauthorized("Invalid tenant context.");
 
-        var branchAssignmentExists = await _db.BranchUserAssignments
-            .AsNoTracking()
-            .AnyAsync(x => x.UserId == userId && x.TenantId == tenantId.Value && x.BranchId == branchId, ct);
+        var branchExists = await BranchExistsAsync(tenantId.Value, branchId, requireActive: false, ct);
+        if (!branchExists)
+            return NotFound("Branch not found.");
 
-        if (!branchAssignmentExists)
-            return NotFound("Branch user not found.");
+        var userBelongsToTenant = await _db.UserPins
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(x => x.UserId == userId && x.TenantId == tenantId.Value, ct);
+
+        if (!userBelongsToTenant)
+            return NotFound("Tenant user not found.");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null)
@@ -482,12 +489,17 @@ public sealed class TenantAdminController : ControllerBase
         if (tenantId is null)
             return Unauthorized("Invalid tenant context.");
 
-        var branchAssignmentExists = await _db.BranchUserAssignments
-            .AsNoTracking()
-            .AnyAsync(x => x.UserId == userId && x.TenantId == tenantId.Value && x.BranchId == branchId, ct);
+        var branchExists = await BranchExistsAsync(tenantId.Value, branchId, requireActive: false, ct);
+        if (!branchExists)
+            return NotFound("Branch not found.");
 
-        if (!branchAssignmentExists)
-            return NotFound("Branch user not found.");
+        var userBelongsToTenant = await _db.UserPins
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(x => x.UserId == userId && x.TenantId == tenantId.Value, ct);
+
+        if (!userBelongsToTenant)
+            return NotFound("Tenant user not found.");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null)
@@ -524,12 +536,17 @@ public sealed class TenantAdminController : ControllerBase
         if (newPassword.Length < 6)
             return BadRequest("New password must be at least 6 characters.");
 
-        var branchAssignmentExists = await _db.BranchUserAssignments
-            .AsNoTracking()
-            .AnyAsync(x => x.UserId == userId && x.TenantId == tenantId.Value && x.BranchId == branchId, ct);
+        var branchExists = await BranchExistsAsync(tenantId.Value, branchId, requireActive: false, ct);
+        if (!branchExists)
+            return NotFound("Branch not found.");
 
-        if (!branchAssignmentExists)
-            return NotFound("Branch user not found.");
+        var userBelongsToTenant = await _db.UserPins
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .AnyAsync(x => x.UserId == userId && x.TenantId == tenantId.Value, ct);
+
+        if (!userBelongsToTenant)
+            return NotFound("Tenant user not found.");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive, ct);
         if (user is null)
@@ -542,10 +559,11 @@ public sealed class TenantAdminController : ControllerBase
     }
 
     [HttpPost("branches/{branchId:guid}/services/import")]
+    [Consumes("multipart/form-data")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<ActionResult<ServiceImportResultDto>> ImportBranchServices(
         [FromRoute] Guid branchId,
-        [FromForm] IFormFile? file,
+        [FromForm] BranchServiceImportForm request,
         CancellationToken ct)
     {
         var tenantId = GetTenantId();
@@ -560,6 +578,7 @@ public sealed class TenantAdminController : ControllerBase
         if (branch is null)
             return NotFound("Branch not found.");
 
+        var file = request.File;
         if (file is null || file.Length == 0)
             return BadRequest("Excel file is required.");
 

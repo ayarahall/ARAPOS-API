@@ -12,6 +12,7 @@ public sealed class CashierSessionDto
     public int TotalCardCents { get; init; }
     public int TotalTransferCents { get; init; }
     public int TotalRefundCents { get; init; }
+    public int CashExpenseCents { get; init; }
     public int ExpectedCashCents { get; init; }
     public int ActualCashCents { get; init; }
     public int DifferenceCents { get; init; }

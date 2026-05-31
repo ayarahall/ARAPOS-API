@@ -19,8 +19,9 @@ namespace Ayapos.Api.Controllers;
 [RequireBranchHeader]
 public sealed class AppointmentsController : ControllerBase
 {
-    private static readonly string[] AllowedStatuses = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
+    private static readonly string[] AllowedStatuses = ["scheduled", "checked_in", "confirmed", "attended", "completed", "cancelled", "no_show"];
     private static readonly Regex ResourcePrefixRegex = new(@"^\[resource:(?<resource>[^\]]+)\]\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly TimeZoneInfo BusinessTimeZone = ResolveBusinessTimeZone();
 
     private readonly AyaposDbContext _db;
     private readonly ITenantContext _tenant;
@@ -48,7 +49,8 @@ public sealed class AppointmentsController : ControllerBase
             {
                 UserId = x.Id,
                 Username = x.FullName,
-                Role = x.JobTitle ?? "Staff"
+                Role = x.JobTitle ?? "Staff",
+                AppointmentColor = x.AppointmentColor
             })
             .OrderBy(x => x.Role)
             .ThenBy(x => x.Username)
@@ -185,7 +187,7 @@ public sealed class AppointmentsController : ControllerBase
 
         var tenantId = _tenant.TenantId.Value;
         var branchId = _tenant.BranchId.Value;
-        var scheduleDate = (date ?? DateTime.UtcNow).Date;
+        var scheduleDate = (date ?? TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, BusinessTimeZone)).Date;
         var nextDate = scheduleDate.AddDays(1);
 
         var resources = await _db.Staff
@@ -199,7 +201,8 @@ public sealed class AppointmentsController : ControllerBase
             {
                 UserId = x.Id,
                 Username = x.FullName,
-                Role = x.JobTitle ?? "Staff"
+                Role = x.JobTitle ?? "Staff",
+                AppointmentColor = x.AppointmentColor
             })
             .OrderBy(x => x.Role)
             .ThenBy(x => x.Username)
@@ -284,6 +287,7 @@ public sealed class AppointmentsController : ControllerBase
                 UserId = resource.UserId,
                 ResourceName = resource.Username,
                 Role = resource.Role,
+                AppointmentColor = resource.AppointmentColor,
                 IsUnassigned = false,
                 Items = itemsByResource.TryGetValue(resource.Username, out var resourceItems)
                     ? resourceItems
@@ -372,6 +376,9 @@ public sealed class AppointmentsController : ControllerBase
                 return BadRequest("Selected resource is not assigned to this branch.");
         }
 
+        if (selectedStaff is not null && await HasOverlappingActiveAppointmentAsync(_tenant.TenantId.Value, _tenant.BranchId.Value, selectedStaff.Id, request.StartAt, request.EndAt, null, ct))
+            return Conflict("This employee already has an appointment in the selected time range.");
+
         var serviceSnapshot = await (
             from service in _db.Services.AsNoTracking()
             join price in _db.ServicePrices.AsNoTracking()
@@ -443,7 +450,10 @@ public sealed class AppointmentsController : ControllerBase
 
         var normalizedStatus = request.Status.Trim().ToLowerInvariant();
         if (!AllowedStatuses.Contains(normalizedStatus))
-            return BadRequest("Status must be scheduled, confirmed, completed, cancelled, or no_show.");
+            return BadRequest("Status must be scheduled, checked_in, attended, completed, cancelled, or no_show.");
+
+        if (normalizedStatus == "confirmed")
+            normalizedStatus = "checked_in";
 
         var tenantId = _tenant.TenantId.Value;
         var branchId = _tenant.BranchId.Value;
@@ -545,6 +555,9 @@ public sealed class AppointmentsController : ControllerBase
                 return BadRequest("Selected resource is not assigned to this branch.");
         }
 
+        if (selectedStaff is not null && await HasOverlappingActiveAppointmentAsync(tenantId, branchId, selectedStaff.Id, request.StartAt, request.EndAt, appointmentId, ct))
+            return Conflict("This employee already has an appointment in the selected time range.");
+
         var serviceSnapshot = await (
             from service in _db.Services.AsNoTracking()
             join price in _db.ServicePrices.AsNoTracking()
@@ -598,6 +611,29 @@ public sealed class AppointmentsController : ControllerBase
         return Ok(await LoadAppointmentDtoAsync(appointment.Id, tenantId, branchId, ct));
     }
 
+    private async Task<bool> HasOverlappingActiveAppointmentAsync(
+        Guid tenantId,
+        Guid branchId,
+        Guid staffId,
+        DateTime startAt,
+        DateTime endAt,
+        Guid? excludeAppointmentId,
+        CancellationToken ct)
+    {
+        return await _db.Appointments
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.TenantId == tenantId &&
+                x.BranchId == branchId &&
+                x.StaffId == staffId &&
+                x.Id != (excludeAppointmentId ?? Guid.Empty) &&
+                x.Status != "cancelled" &&
+                x.Status != "no_show" &&
+                x.Status != "completed" &&
+                x.StartAt < endAt &&
+                x.EndAt > startAt,
+                ct);
+    }
     private static string? BuildAppointmentNotes(string? resourceName, string? notes)
     {
         var cleanNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
@@ -626,6 +662,11 @@ public sealed class AppointmentsController : ControllerBase
         return ResourcePrefixRegex.Replace(notes, string.Empty).Trim();
     }
 
+    private static TimeZoneInfo ResolveBusinessTimeZone()
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Arabian Standard Time"); }
+        catch (TimeZoneNotFoundException) { return TimeZoneInfo.FindSystemTimeZoneById("Asia/Dubai"); }
+    }
     private async Task<AppointmentListItemDto> LoadAppointmentDtoAsync(Guid appointmentId, Guid tenantId, Guid branchId, CancellationToken ct)
     {
         var dto = await (
@@ -675,3 +716,7 @@ public sealed class AppointmentsController : ControllerBase
         return dto;
     }
 }
+
+
+
+
