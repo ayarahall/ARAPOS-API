@@ -38,12 +38,31 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// DbContext — prefer DATABASE_URL env var (Render), fall back to appsettings
+// DbContext — prefer DATABASE_URL env var (Render postgres:// URI), fall back to appsettings
 builder.Services.AddDbContext<AyaposDbContext>(opt =>
 {
-    var cs = Environment.GetEnvironmentVariable("DATABASE_URL")
-             ?? builder.Configuration.GetConnectionString("AyaposDb")
-             ?? throw new InvalidOperationException("Missing connection string (DATABASE_URL or ConnectionStrings:AyaposDb)");
+    var raw = Environment.GetEnvironmentVariable("DATABASE_URL")
+              ?? builder.Configuration.GetConnectionString("AyaposDb")
+              ?? throw new InvalidOperationException("Missing DB connection string.");
+
+    // Convert postgres:// or postgresql:// URI → Npgsql key=value format
+    string cs;
+    if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(raw);
+        var parts = uri.UserInfo.Split(':', 2);
+        var user = Uri.UnescapeDataString(parts[0]);
+        var pass = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "";
+        var port = uri.Port > 0 ? uri.Port : 5432;
+        var db   = uri.AbsolutePath.TrimStart('/');
+        cs = $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
+    }
+    else
+    {
+        cs = raw;
+    }
+
     opt.UseNpgsql(cs);
 });
 
