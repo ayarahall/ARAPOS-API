@@ -22,7 +22,13 @@ builder.Services.AddCors(options =>
         policy =>
         {
             policy.SetIsOriginAllowed(origin =>
-                      new Uri(origin).Host == "localhost")
+                      {
+                          var host = new Uri(origin).Host;
+                          return host == "localhost"
+                              || host == "127.0.0.1"
+                              || host.EndsWith(".vercel.app")
+                              || host.EndsWith(".onrender.com");
+                      })
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
@@ -32,13 +38,13 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// DbContext
+// DbContext — prefer DATABASE_URL env var (Render), fall back to appsettings
 builder.Services.AddDbContext<AyaposDbContext>(opt =>
 {
-    var cs = builder.Configuration.GetConnectionString("AyaposDb")
-             ?? throw new InvalidOperationException("Missing ConnectionStrings:AyaposDb");
-    cs = LocalDbConnectionStringResolver.Resolve(cs);
-    opt.UseSqlServer(cs);
+    var cs = Environment.GetEnvironmentVariable("DATABASE_URL")
+             ?? builder.Configuration.GetConnectionString("AyaposDb")
+             ?? throw new InvalidOperationException("Missing connection string (DATABASE_URL or ConnectionStrings:AyaposDb)");
+    opt.UseNpgsql(cs);
 });
 
 // Tenant context
@@ -52,7 +58,6 @@ builder.Services.Configure<OpenAiVisionOptions>(builder.Configuration.GetSection
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<PasswordHasherService>();
 builder.Services.AddScoped<OwnerBootstrapService>();
-builder.Services.AddScoped<WorkforceSchemaBootstrapService>();
 builder.Services.AddHttpClient<IExpenseReceiptAnalyzer, OpenAiExpenseReceiptAnalyzer>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
@@ -185,8 +190,8 @@ app.UseCors("AllowReact");
 
 using (var scope = app.Services.CreateScope())
 {
-    var workforceBootstrap = scope.ServiceProvider.GetRequiredService<WorkforceSchemaBootstrapService>();
-    await workforceBootstrap.EnsureSchemaAsync();
+    var db = scope.ServiceProvider.GetRequiredService<AyaposDbContext>();
+    await db.Database.MigrateAsync();
 
     var ownerBootstrap = scope.ServiceProvider.GetRequiredService<OwnerBootstrapService>();
     await ownerBootstrap.EnsureOwnerAsync();

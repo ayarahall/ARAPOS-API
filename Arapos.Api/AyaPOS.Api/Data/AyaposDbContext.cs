@@ -80,8 +80,6 @@ public partial class AyaposDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.UseCollation("Arabic_100_CI_AI_SC");
-
         modelBuilder.Entity<AppSetting>(entity =>
         {
             entity.HasKey(e => e.Key);
@@ -98,11 +96,11 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => e.StartAt, "IX_Appointments_StartAt");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.BranchId).IsRequired(false);
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.EndAt).HasPrecision(0);
             entity.Property(e => e.Notes).HasMaxLength(400);
             entity.Property(e => e.StartAt).HasPrecision(0);
@@ -128,7 +126,7 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => e.AppointmentId, "IX_AppointmentItems_AppointmentId");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
@@ -148,18 +146,22 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.ExpenseDate }, "IX_BranchExpenses_Tenant_Branch_Date");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.Amount).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.Category).HasMaxLength(40);
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
                 .HasDefaultValue("AED")
                 .IsFixedLength();
             entity.Property(e => e.ExpenseDate).HasPrecision(0);
+            entity.Property(e => e.PaymentMethod)
+                .HasMaxLength(20)
+                .HasDefaultValue("cash");
+            entity.Property(e => e.PaidAt).HasPrecision(0);
             entity.Property(e => e.Notes).HasMaxLength(400);
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
@@ -169,24 +171,13 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<Branch>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("BranchesHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => new { e.TenantId, e.Code }, "UQ_Branches_Tenant_Code").IsUnique();
 
             entity.HasIndex(e => new { e.TenantId, e.Id }, "UQ_Branches_Tenant_Id").IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.Code).HasMaxLength(50);
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
@@ -208,7 +199,7 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId }, "IX_BranchUserAssignments_Tenant_Branch");
 
-            entity.Property(e => e.AssignedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.AssignedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.Branch).WithMany(p => p.BranchUserAssignments)
                 .HasForeignKey(d => d.BranchId)
@@ -244,7 +235,7 @@ public partial class AyaposDbContext : DbContext
             entity.Property(e => e.ShowPaymentHistoryOnReceipt).HasDefaultValue(true);
             entity.Property(e => e.AutoPrintReceiptAfterPayment).HasDefaultValue(false);
             entity.Property(e => e.RequireManagerForPriceOverride).HasDefaultValue(true);
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.Branch).WithOne(p => p.BranchSetting)
                 .HasPrincipalKey<Branch>(p => new { p.TenantId, p.Id })
@@ -261,10 +252,10 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => e.TenantId, "IX_Customers_TenantId");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.Email).HasMaxLength(120);
             entity.Property(e => e.FullName).HasMaxLength(120);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
@@ -274,21 +265,10 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<CustomerLicense>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("CustomerLicensesHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => new { e.TenantId, e.CustomerId }, "IX_CustomerLicenses_Tenant_Customer");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.LicenseType).HasMaxLength(80);
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
@@ -310,10 +290,10 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => new { e.ProductId, e.CreatedAt }, "IX_InventoryMoves_Product_Time").IsDescending(false, true);
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.MoveType).HasMaxLength(30);
             entity.Property(e => e.Reason).HasMaxLength(200);
             entity.Property(e => e.RefType).HasMaxLength(30);
@@ -330,17 +310,6 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<Invoice>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("InvoicesHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.CreatedAt }, "IX_Invoices_Tenant_Branch_CreatedAt");
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.InvoiceNo }, "UQ_Invoices_Tenant_Branch_InvoiceNo").IsUnique();
@@ -349,8 +318,8 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => new { e.TenantId, e.Id }, "UQ_Invoices_Tenant_Id").IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.InvoiceCode).HasMaxLength(80);
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
@@ -375,20 +344,9 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<InvoiceItem>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("InvoiceItemsHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => e.InvoiceId, "IX_InvoiceItems_InvoiceId");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
@@ -423,19 +381,8 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasKey(e => new { e.TenantId, e.BranchId });
 
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("InvoiceSequencesHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.Property(e => e.NextNumber).HasDefaultValue(1);
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.Branch).WithMany(p => p.InvoiceSequenceBranches)
                 .HasForeignKey(d => d.BranchId)
@@ -458,10 +405,10 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => e.LicenseKey, "UX_Licenses_LicenseKey").IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.ExpiresAt).HasPrecision(0);
             entity.Property(e => e.LicenseKey).HasMaxLength(80);
             entity.Property(e => e.Notes).HasMaxLength(300);
@@ -476,14 +423,14 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => new { e.LicenseId, e.DeviceId }, "UX_LA_License_Device").IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.ActivatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.DeviceId).HasMaxLength(80);
             entity.Property(e => e.LastSeenAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.License).WithMany(p => p.LicenseActivations)
                 .HasForeignKey(d => d.LicenseId)
@@ -494,31 +441,20 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.RefType, e.RefId, e.ApprovedAt }, "IX_ManagerApprovals_Ref").IsDescending(false, false, false, false, true);
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.ApprovalType).HasMaxLength(30);
-            entity.Property(e => e.ApprovedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.ApprovedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.Notes).HasMaxLength(200);
             entity.Property(e => e.RefType).HasMaxLength(30);
         });
 
         modelBuilder.Entity<Payment>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("PaymentsHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => e.InvoiceId, "IX_Payments_InvoiceId");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.Method).HasMaxLength(10);
-            entity.Property(e => e.PaidAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.PaidAt).HasDefaultValueSql("now()");
             entity.Property(e => e.Reference).HasMaxLength(100);
 
             entity.HasOne(d => d.Tenant).WithMany(p => p.Payments)
@@ -535,17 +471,6 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<Product>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("ProductsHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => e.IsActive, "IX_Products_Active");
 
             entity.HasIndex(e => e.Barcode, "IX_Products_Barcode");
@@ -554,22 +479,22 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.Barcode }, "UQ_Products_Tenant_Branch_Barcode")
                 .IsUnique()
-                .HasFilter("([Barcode] IS NOT NULL)");
+                .HasFilter("\"Barcode\" IS NOT NULL");
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.Sku }, "UQ_Products_Tenant_Branch_Sku")
                 .IsUnique()
-                .HasFilter("([Sku] IS NOT NULL)");
+                .HasFilter("\"Sku\" IS NOT NULL");
 
             entity.HasIndex(e => e.Sku, "UX_Products_Sku_NotNull")
                 .IsUnique()
-                .HasFilter("([Sku] IS NOT NULL)");
+                .HasFilter("\"Sku\" IS NOT NULL");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.Barcode).HasMaxLength(60);
             entity.Property(e => e.CostPrice).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
@@ -594,25 +519,14 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<ProductPrice>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("ProductPricesHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.ProductId, e.IsActive }, "IX_ProductPrices_Lookup");
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.ProductId }, "UX_ProductPrices_Active")
                 .IsUnique()
-                .HasFilter("([IsActive]=(1))");
+                .HasFilter("\"IsActive\" = true");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
@@ -631,7 +545,7 @@ public partial class AyaposDbContext : DbContext
             entity.Property(e => e.ProductId).ValueGeneratedNever();
             entity.Property(e => e.UpdatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.Product).WithOne(p => p.ProductStockSnapshot)
                 .HasForeignKey<ProductStockSnapshot>(d => d.ProductId)
@@ -645,10 +559,10 @@ public partial class AyaposDbContext : DbContext
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId }, "IX_Services_Tenant_Branch");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.NameAr).HasMaxLength(120);
             entity.Property(e => e.NameEn).HasMaxLength(120);
@@ -656,23 +570,12 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<ServicePrice>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("ServicePricesHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.IsActive }, "IX_ServicePrices_Branch_Active");
 
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.ServiceId }, "UQ_ServicePrices_Tenant_Branch_Service").IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.CurrencyCode)
                 .HasMaxLength(3)
                 .IsUnicode(false)
@@ -700,11 +603,11 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => e.FullName, "IX_Staff_FullName");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.BaseSalary).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.DeductionPerAbsentDay).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.DeductionPerLateMinute).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.Email).HasMaxLength(120);
@@ -731,7 +634,7 @@ public partial class AyaposDbContext : DbContext
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.IsBookableForAppointments }, "IX_Staff_Tenant_Branch_Bookable");
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.EmployeeCode }, "UQ_Staff_Tenant_Branch_EmployeeCode")
                 .IsUnique()
-                .HasFilter("([EmployeeCode] IS NOT NULL)");
+                .HasFilter("\"EmployeeCode\" IS NOT NULL");
 
             entity.HasOne(d => d.Branch).WithMany(p => p.StaffMembers)
                 .HasPrincipalKey(p => new { p.TenantId, p.Id })
@@ -750,13 +653,13 @@ public partial class AyaposDbContext : DbContext
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.StaffId, e.AttendanceDate }, "UQ_StaffAttendances_Staff_Date")
                 .IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.AttendanceDate).HasPrecision(0);
             entity.Property(e => e.CheckInAt).HasPrecision(0);
             entity.Property(e => e.CheckOutAt).HasPrecision(0);
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.DeductionAmount).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.Notes).HasMaxLength(400);
             entity.Property(e => e.Status)
@@ -783,10 +686,10 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.StaffId }, "IX_StaffDocuments_Staff");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.DocumentType).HasMaxLength(40);
             entity.Property(e => e.ExpiresAt).HasPrecision(0);
             entity.Property(e => e.FileName).HasMaxLength(160);
@@ -810,10 +713,10 @@ public partial class AyaposDbContext : DbContext
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.StartDate }, "IX_StaffLeaves_Branch_StartDate");
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.StaffId }, "IX_StaffLeaves_Staff");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.EndDate).HasPrecision(0);
             entity.Property(e => e.LeaveType).HasMaxLength(30);
             entity.Property(e => e.Notes).HasMaxLength(400);
@@ -838,10 +741,10 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.StaffId, e.IsActive }, "IX_StaffShifts_Staff_Active");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.EffectiveFrom).HasPrecision(0);
             entity.Property(e => e.EffectiveTo).HasPrecision(0);
             entity.Property(e => e.EndTime).HasColumnType("time");
@@ -864,21 +767,10 @@ public partial class AyaposDbContext : DbContext
 
         modelBuilder.Entity<Tenant>(entity =>
         {
-            entity.ToTable(tb => tb.IsTemporal(ttb =>
-                    {
-                        ttb.UseHistoryTable("TenantsHistory", "dbo");
-                        ttb
-                            .HasPeriodStart("SysStartTime")
-                            .HasColumnName("SysStartTime");
-                        ttb
-                            .HasPeriodEnd("SysEndTime")
-                            .HasColumnName("SysEndTime");
-                    }));
-
             entity.HasIndex(e => e.Slug, "UQ_Tenants_Slug").IsUnique();
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newsequentialid())");
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.MaxUsers).HasDefaultValue(1);
             entity.Property(e => e.LicenseExpiresAt).HasColumnType("datetime2");
             entity.Property(e => e.LicensePlan)
@@ -886,7 +778,7 @@ public partial class AyaposDbContext : DbContext
                 .HasDefaultValue("MONTHLY");
             entity.Property(e => e.LicenseStartedAt)
                 .HasColumnType("datetime2")
-                .HasDefaultValueSql("(sysutcdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.LicenseStatus)
                 .HasMaxLength(20)
                 .HasDefaultValue("ACTIVE");
@@ -901,10 +793,10 @@ public partial class AyaposDbContext : DbContext
         {
             entity.HasIndex(e => e.Username, "IX_Users_Username");
 
-            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
                 .HasPrecision(0)
-                .HasDefaultValueSql("(sysdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.LicenseExpiresAt).HasColumnType("datetime2");
             entity.Property(e => e.LicensePlan)
@@ -912,7 +804,7 @@ public partial class AyaposDbContext : DbContext
                 .HasDefaultValue("MONTHLY");
             entity.Property(e => e.LicenseStartedAt)
                 .HasColumnType("datetime2")
-                .HasDefaultValueSql("(sysutcdatetime())");
+                .HasDefaultValueSql("now()");
             entity.Property(e => e.LicenseStatus)
                 .HasMaxLength(20)
                 .HasDefaultValue("ACTIVE");
@@ -932,7 +824,7 @@ public partial class AyaposDbContext : DbContext
             entity.Property(e => e.Iterations).HasDefaultValue(1);
             entity.Property(e => e.PinHash).HasMaxLength(64);
             entity.Property(e => e.PinSalt).HasMaxLength(32);
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
             entity.HasOne(d => d.User).WithMany(p => p.UserPins)
                 .HasForeignKey(d => d.UserId)
@@ -946,7 +838,7 @@ public partial class AyaposDbContext : DbContext
                 .HasNoKey()
                 .ToTable("UserPinsHistory");
 
-            entity.HasIndex(e => new { e.SysEndTime, e.SysStartTime }, "ix_UserPinsHistory").IsClustered();
+            entity.HasIndex(e => new { e.SysEndTime, e.SysStartTime }, "ix_UserPinsHistory");
 
             entity.Property(e => e.Algo).HasMaxLength(30);
             entity.Property(e => e.PinHash).HasMaxLength(64);
