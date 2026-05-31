@@ -1627,7 +1627,7 @@ namespace Ayapos.Api.Migrations
                         .HasDefaultValueSql("now()");
 
                     b.Property<DateTime>("LicenseExpiresAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LicensePlan")
                         .IsRequired()
@@ -1638,7 +1638,7 @@ namespace Ayapos.Api.Migrations
 
                     b.Property<DateTime>("LicenseStartedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
+                        .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
 
                     b.Property<string>("LicenseStatus")
@@ -1697,7 +1697,7 @@ namespace Ayapos.Api.Migrations
                         .HasDefaultValue(true);
 
                     b.Property<DateTime>("LicenseExpiresAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LicensePlan")
                         .IsRequired()
@@ -1708,7 +1708,7 @@ namespace Ayapos.Api.Migrations
 
                     b.Property<DateTime>("LicenseStartedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
+                        .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("now()");
 
                     b.Property<string>("LicenseStatus")

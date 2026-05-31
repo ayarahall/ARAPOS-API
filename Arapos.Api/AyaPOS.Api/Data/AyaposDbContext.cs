@@ -772,12 +772,12 @@ public partial class AyaposDbContext : DbContext
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("now()");
             entity.Property(e => e.MaxUsers).HasDefaultValue(1);
-            entity.Property(e => e.LicenseExpiresAt).HasColumnType("datetime2");
+            entity.Property(e => e.LicenseExpiresAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.LicensePlan)
                 .HasMaxLength(20)
                 .HasDefaultValue("MONTHLY");
             entity.Property(e => e.LicenseStartedAt)
-                .HasColumnType("datetime2")
+                .HasColumnType("timestamp with time zone")
                 .HasDefaultValueSql("now()");
             entity.Property(e => e.LicenseStatus)
                 .HasMaxLength(20)
@@ -798,12 +798,12 @@ public partial class AyaposDbContext : DbContext
                 .HasPrecision(0)
                 .HasDefaultValueSql("now()");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
-            entity.Property(e => e.LicenseExpiresAt).HasColumnType("datetime2");
+            entity.Property(e => e.LicenseExpiresAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.LicensePlan)
                 .HasMaxLength(20)
                 .HasDefaultValue("MONTHLY");
             entity.Property(e => e.LicenseStartedAt)
-                .HasColumnType("datetime2")
+                .HasColumnType("timestamp with time zone")
                 .HasDefaultValueSql("now()");
             entity.Property(e => e.LicenseStatus)
                 .HasMaxLength(20)

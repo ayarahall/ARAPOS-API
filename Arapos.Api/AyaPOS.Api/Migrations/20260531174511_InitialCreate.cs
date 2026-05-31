@@ -193,8 +193,8 @@ namespace Ayapos.Api.Migrations
                     LicensePlan = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "MONTHLY"),
                     LicenseStatus = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "ACTIVE"),
                     MaxUsers = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
-                    LicenseStartedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "now()"),
-                    LicenseExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    LicenseStartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    LicenseExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
@@ -231,8 +231,8 @@ namespace Ayapos.Api.Migrations
                     IsActive = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
                     LicensePlan = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "MONTHLY"),
                     LicenseStatus = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "ACTIVE"),
-                    LicenseStartedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "now()"),
-                    LicenseExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    LicenseStartedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    LicenseExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp(0) with time zone", precision: 0, nullable: false, defaultValueSql: "now()"),
                     PinHash = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     PermissionsJson = table.Column<string>(type: "text", nullable: true)
