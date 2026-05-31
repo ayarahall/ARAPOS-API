@@ -1,0 +1,1226 @@
+@page "/appointments"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Appointments
+@using Ayapos.EndUser.Models.Customers
+@using Ayapos.EndUser.Models.Services
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Appointments
+@using Ayapos.EndUser.Services.Customers
+@using Ayapos.EndUser.Services.Services
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject AppointmentsApiClient AppointmentsApiClient
+@inject CustomersApiClient CustomersApiClient
+@inject ServicesApiClient ServicesApiClient
+
+<PageTitle>Appointments</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="Appointments" Description="Manage daily booking flow at branch level, separate from owner and tenant administration." SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="appointments" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Branch Calendar</span>
+                <h2>@AppointmentsTitle</h2>
+            </div>
+            <p>@AppointmentsDescription</p>
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Scope</span>
+            <strong class="metric-value">Branch Level</strong>
+            <span class="metric-note">Appointments belong to the operating branch, not the platform admin area.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Focus</span>
+            <strong class="metric-value">@AppointmentFocus</strong>
+            <span class="metric-note">The screen supports reception, specialists, and branch scheduling.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Current Branch</span>
+            <strong class="metric-value">@BranchLabel</strong>
+            <span class="metric-note">The selected branch context from the signed-in session.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Appointments</span>
+            <strong class="metric-value">@TotalCount</strong>
+            <span class="metric-note">Appointments loaded for @SelectedScheduleDate.ToString("dddd, dd MMM yyyy").</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Booking Flow</span>
+                <h2>Open a booking popup from the scheduler</h2>
+            </div>
+            <p>Choose the date, pick the specialist column, then click a free slot. The customer and service details open in a focused popup instead of stretching the whole page.</p>
+        </div>
+
+        <div class="metrics-grid" style="margin-top:18px;">
+            <article class="metric-card">
+                <span class="metric-label">Step 1</span>
+                <strong class="metric-value">Pick Specialist</strong>
+                <span class="metric-note">Choose the target specialist column or keep the booking unassigned.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Step 2</span>
+                <strong class="metric-value">Pick Slot</strong>
+                <span class="metric-note">Select a free slot and we open the create-booking popup for that exact time.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Step 3</span>
+                <strong class="metric-value">Customer + Service</strong>
+                <span class="metric-note">Customer name and phone stay mandatory for new appointments inside the tenant and branch.</span>
+            </article>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button type="button" class="submit-button" @onclick="OpenCreateAppointmentModal" disabled="@IsBusy">New Appointment</button>
+            <button type="button" class="ghost-button" @onclick="RefreshAsync" disabled="@IsBusy">Refresh Appointments</button>
+        </div>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Scheduler</span>
+                <h2>Daily appointments by specialist</h2>
+            </div>
+            <p>This board follows the branch working day and gives each specialist or resource a separate vertical lane, similar to a salon or clinic scheduler.</p>
+        </div>
+
+        <div class="scheduler-topbar">
+            <div class="scheduler-nav">
+                <button type="button" class="ghost-button" @onclick="LoadPreviousDayAsync" disabled="@IsBusy">Previous Day</button>
+                <button type="button" class="ghost-button" @onclick="LoadTodayAsync" disabled="@IsBusy">Today</button>
+                <button type="button" class="ghost-button" @onclick="LoadNextDayAsync" disabled="@IsBusy">Next Day</button>
+            </div>
+
+            <div class="scheduler-nav">
+                <button type="button" class="ghost-button @(ScheduleMode == "day" ? "active-filter-button" : string.Empty)" @onclick='() => ChangeScheduleModeAsync("day")' disabled="@IsBusy">Day View</button>
+                <button type="button" class="ghost-button @(ScheduleMode == "week" ? "active-filter-button" : string.Empty)" @onclick='() => ChangeScheduleModeAsync("week")' disabled="@IsBusy">Week View</button>
+                <button type="button" class="ghost-button @(ScheduleMode == "agenda" ? "active-filter-button" : string.Empty)" @onclick='() => ChangeScheduleModeAsync("agenda")' disabled="@IsBusy">Agenda</button>
+                <button type="button" class="ghost-button" @onclick="OpenCreateAppointmentModal" disabled="@IsBusy">New Appointment</button>
+                <button type="button" class="ghost-button" @onclick="RefreshAsync" disabled="@IsBusy">Reload</button>
+            </div>
+
+            <div class="scheduler-date-wrap">
+                <label for="scheduleDatePicker" class="metric-label">Schedule Date</label>
+                <input id="scheduleDatePicker" class="form-input compact-input" type="date" value="@SelectedScheduleDate.ToString("yyyy-MM-dd")" @onchange="OnScheduleDateChanged" />
+            </div>
+        </div>
+
+        @if (ScheduleMode == "day")
+        {
+        <div class="scheduler-shell">
+            <aside class="scheduler-sidebar">
+                <div class="scheduler-sidebar-card">
+                    <div class="scheduler-sidebar-title">Day Summary</div>
+                    <div class="scheduler-sidebar-value">@SelectedScheduleDate.ToString("dddd")</div>
+                    <div class="scheduler-sidebar-note">@SelectedScheduleDate.ToString("dd MMMM yyyy")</div>
+                </div>
+
+                <div class="scheduler-sidebar-card">
+                    <div class="scheduler-sidebar-title">Specialists</div>
+                    <div class="scheduler-sidebar-value">@ScheduleColumns.Count</div>
+                    <div class="scheduler-sidebar-note">Separate columns currently visible in the board.</div>
+                </div>
+
+                <div class="scheduler-sidebar-card">
+                    <div class="scheduler-sidebar-title">Loaded Bookings</div>
+                    <div class="scheduler-sidebar-value">@ScheduleColumns.Sum(column => column.Items.Count)</div>
+                    <div class="scheduler-sidebar-note">Appointments plotted across all resources for this day.</div>
+                </div>
+
+                <div class="scheduler-sidebar-card">
+                    <div class="scheduler-sidebar-title">Unassigned</div>
+                    <div class="scheduler-sidebar-value">@(ScheduleColumns.FirstOrDefault(column => column.IsUnassigned)?.Items.Count ?? 0)</div>
+                    <div class="scheduler-sidebar-note">Visits still waiting for a named specialist.</div>
+                </div>
+            </aside>
+
+            @if (ScheduleColumns.Count == 0)
+            {
+                <div class="placeholder-panel" style="width:100%;">No resources or appointments are available for the selected date yet.</div>
+            }
+            else
+            {
+                <div class="scheduler-board-wrap">
+                    <div class="scheduler-grid" style="@SchedulerColumnsStyle">
+                        <div class="scheduler-time-column">
+                            <div class="scheduler-time-header">Time</div>
+                            @foreach (var label in HourLabels)
+                            {
+                                <div class="scheduler-time-slot">@label</div>
+                            }
+                        </div>
+
+                        @foreach (var column in ScheduleColumns)
+                        {
+                            <div class="scheduler-resource-column">
+                                <div class="scheduler-resource-header">
+                                    <strong>@column.ResourceName</strong>
+                                    <span>@(column.IsUnassigned ? "Open pool" : string.IsNullOrWhiteSpace(column.Role) ? "Resource" : column.Role)</span>
+                                </div>
+
+                                <div class="scheduler-lane" style="@GetLaneBackgroundStyle()">
+                                    @foreach (var item in column.Items)
+                                    {
+                                        <article class="scheduler-appointment-card @GetAppointmentStatusClass(item.Status)" style="@GetAppointmentCardStyle(item, column.ResourceName)" @onclick="() => OpenManageAppointmentModal(item)">
+                                            <div class="scheduler-appointment-time">@item.StartAt.ToLocalTime().ToString("HH:mm") - @item.EndAt.ToLocalTime().ToString("HH:mm")</div>
+                                            <div class="scheduler-appointment-title">@(string.IsNullOrWhiteSpace(item.CustomerName) ? "Walk-in" : item.CustomerName)</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.ServiceName))
+                                            {
+                                                <div class="scheduler-appointment-meta">@item.ServiceName</div>
+                                            }
+                                            <div class="scheduler-appointment-meta">@(string.IsNullOrWhiteSpace(item.CustomerPhone) ? "No phone" : item.CustomerPhone)</div>
+                                            <div class="scheduler-appointment-meta">@MapStatusLabel(item.Status)</div>
+                                            @if (!string.IsNullOrWhiteSpace(item.Notes))
+                                            {
+                                                <div class="scheduler-appointment-notes">@item.Notes</div>
+                                            }
+                                        </article>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+        }
+        else if (ScheduleMode == "week")
+        {
+            <div class="products-table-wrap" style="margin-top:20px;">
+                @if (WeeklyAgendaDays.Count == 0)
+                {
+                    <div class="placeholder-panel">No appointments are available for the selected week yet.</div>
+                }
+                else
+                {
+                    <div class="agenda-week-grid">
+                        @foreach (var day in WeeklyAgendaDays)
+                        {
+                            <section class="agenda-day-card">
+                                <div class="agenda-day-header">
+                                    <strong>@day.Date.ToString("dddd")</strong>
+                                    <span>@day.Date.ToString("dd MMM yyyy")</span>
+                                </div>
+
+                                @if (day.Items.Count == 0)
+                                {
+                                    <div class="table-secondary-cell">No bookings for this day.</div>
+                                }
+                                else
+                                {
+                                    @foreach (var item in day.Items)
+                                    {
+                                        <article class="agenda-item-card" style="@GetAgendaItemStyle(item)" @onclick="() => OpenManageAppointmentModal(item)">
+                                            <div class="agenda-item-time">@item.StartAt.ToLocalTime().ToString("HH:mm") - @item.EndAt.ToLocalTime().ToString("HH:mm")</div>
+                                            <div class="agenda-item-title">@(string.IsNullOrWhiteSpace(item.CustomerName) ? "Walk-in" : item.CustomerName)</div>
+                                            <div class="agenda-item-meta">@(!string.IsNullOrWhiteSpace(item.ServiceName) ? item.ServiceName : "No service")</div>
+                                            <div class="agenda-item-meta">@(!string.IsNullOrWhiteSpace(item.ResourceName) ? item.ResourceName : "Unassigned")</div>
+                                        </article>
+                                    }
+                                }
+                            </section>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="products-table-wrap" style="margin-top:20px;">
+                @if (AgendaGroups.Count == 0)
+                {
+                    <div class="placeholder-panel">No appointments are available for the current agenda range yet.</div>
+                }
+                else
+                {
+                    @foreach (var group in AgendaGroups)
+                    {
+                        <section class="agenda-day-card" style="margin-bottom:16px;">
+                            <div class="agenda-day-header">
+                                <strong>@group.Date.ToString("dddd")</strong>
+                                <span>@group.Date.ToString("dd MMM yyyy")</span>
+                            </div>
+
+                            <div class="products-table-wrap" style="margin-top:12px;">
+                                <table class="products-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Customer</th>
+                                            <th>Phone</th>
+                                            <th>Service</th>
+                                            <th>Specialist</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in group.Items)
+                                        {
+                                            <tr>
+                                                <td>@item.StartAt.ToLocalTime().ToString("HH:mm") - @item.EndAt.ToLocalTime().ToString("HH:mm")</td>
+                                                <td>@(string.IsNullOrWhiteSpace(item.CustomerName) ? "Walk-in" : item.CustomerName)</td>
+                                                <td>@(string.IsNullOrWhiteSpace(item.CustomerPhone) ? "No phone" : item.CustomerPhone)</td>
+                                                <td>@(!string.IsNullOrWhiteSpace(item.ServiceName) ? item.ServiceName : "No service")</td>
+                                                <td>@(!string.IsNullOrWhiteSpace(item.ResourceName) ? item.ResourceName : "Unassigned")</td>
+                                                <td>@MapStatusLabel(item.Status)</td>
+                                                <td>
+                                                    <button type="button" class="ghost-button" @onclick="() => OpenManageAppointmentModal(item)">Manage</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    }
+                }
+            </div>
+        }
+    </section>
+
+    <section class="products-table-wrap">
+        @if (AppointmentItems.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">No appointments loaded for this branch yet.</div>
+        }
+        else
+        {
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th>Service</th>
+                        <th>Resource</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Status</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in AppointmentItems)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@(string.IsNullOrWhiteSpace(item.CustomerName) ? "Walk-in" : item.CustomerName)</div>
+                                <div class="table-secondary-cell">@(string.IsNullOrWhiteSpace(item.CustomerPhone) ? "No phone" : item.CustomerPhone)</div>
+                            </td>
+                            <td>
+                                <div class="table-primary-cell">@(string.IsNullOrWhiteSpace(item.ServiceName) ? "-" : item.ServiceName)</div>
+                                <div class="table-secondary-cell">@(item.ServicePrice is null ? string.Empty : $"{item.ServicePrice:0.##} {item.CurrencyCode}")</div>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(item.ResourceName) ? "Unassigned" : item.ResourceName)</td>
+                            <td>@item.StartAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>@item.EndAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td>
+                                <select class="form-input compact-input" value="@item.Status" @onchange="args => UpdateStatusAsync(item, args.Value?.ToString())">
+                                    @foreach (var status in AppointmentStatuses)
+                                    {
+                                        <option value="@status">@MapStatusLabel(status)</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(item.Notes) ? "-" : item.Notes)</td>
+                            <td>
+                                <div class="invoice-actions" style="gap:8px;">
+                                    <button type="button" class="ghost-button" @onclick="() => OpenManageAppointmentModal(item)">Edit</button>
+                                    <button type="button" class="ghost-button" @onclick='() => QuickMarkAppointmentStatusAsync(item, "cancelled")' disabled="@IsBusy">Cancel</button>
+                                    <button type="button" class="ghost-button" @onclick='() => QuickMarkAppointmentStatusAsync(item, "no_show")' disabled="@IsBusy">No Show</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <ActionModal Visible="@ShowCreateAppointmentModal"
+                 Eyebrow="New Appointment"
+                 Title="Create appointment for this branch"
+                 Description="Pick the specialist, confirm the time slot, then attach an existing customer or create a new one with required name and phone."
+                 OnClose="CloseCreateAppointmentModal">
+        <div class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Window</span>
+                <strong class="metric-value">@AppointmentWindowLabel</strong>
+                <span class="metric-note">@(!HasSelectedSlot ? "Pick a free slot from the scheduler or the list below." : "This slot is now locked for the booking flow until you save or close.")</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Assigned To</span>
+                <strong class="metric-value">@(string.IsNullOrWhiteSpace(CreateModel.ResourceName) ? "Unassigned" : CreateModel.ResourceName)</strong>
+                <span class="metric-note">Each specialist gets a separate column in the branch board.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Selected Service</span>
+                <strong class="metric-value">@(SelectedService is null ? "No service" : GetServiceDisplayName(SelectedService))</strong>
+                <span class="metric-note">@(SelectedService is null ? "Choose a branch service before saving the appointment." : $"{SelectedService.Price:0.##} {SelectedService.CurrencyCode}")</span>
+            </article>
+        </div>
+
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Step 1</span>
+                <h2>Select specialist and timing</h2>
+            </div>
+            <p>Bookings remain inside the current tenant and branch, while the chosen specialist controls the scheduler column.</p>
+        </div>
+
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="scheduleDatePickerCreate">Schedule Date</label>
+                <input id="scheduleDatePickerCreate" class="form-input" type="date" value="@SelectedScheduleDate.ToString("yyyy-MM-dd")" @onchange="OnScheduleDateChanged" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentResource">Specialist / Resource</label>
+                <select id="appointmentResource" class="form-input" @bind="CreateModel.ResourceName">
+                    <option value="">Unassigned resource</option>
+                    @foreach (var resource in ResourceOptions)
+                    {
+                        <option value="@resource.Username">@resource.Username (@resource.Role)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="appointmentService">Service</label>
+                <select id="appointmentService" class="form-input" @bind="SelectedServiceId">
+                    <option value="">Select branch service</option>
+                    @foreach (var service in ServiceOptions)
+                    {
+                        <option value="@service.Id">@GetServiceDisplayName(service) (@service.Price:0.## @service.CurrencyCode)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="appointmentStartAt">Selected Start</label>
+                <input id="appointmentStartAt" class="form-input" type="datetime-local" value="@StartAtInput" @onchange="OnStartAtChanged" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentEndAt">Selected End</label>
+                <input id="appointmentEndAt" class="form-input" type="datetime-local" value="@EndAtInput" @onchange="OnEndAtChanged" />
+            </div>
+        </div>
+
+        <div class="resource-chip-grid">
+            <button type="button"
+                    class="resource-chip @(string.IsNullOrWhiteSpace(CreateModel.ResourceName) ? "resource-chip-active" : string.Empty)"
+                    @onclick='() => SelectResource(string.Empty)'>
+                <strong>Unassigned</strong>
+                <span>Open lane</span>
+            </button>
+            @foreach (var resource in ResourceOptions)
+            {
+                <button type="button"
+                        class="resource-chip @(string.Equals(CreateModel.ResourceName, resource.Username, StringComparison.OrdinalIgnoreCase) ? "resource-chip-active" : string.Empty)"
+                        style="@BuildSpecialistColorStyle(resource.Username)"
+                        @onclick='() => SelectResource(resource.Username)'>
+                    <strong>@resource.Username</strong>
+                    <span>@resource.Role</span>
+                </button>
+            }
+        </div>
+
+        <div class="slot-picker-grid">
+            @foreach (var slot in AvailableSlots)
+            {
+                var occupied = IsSlotOccupied(slot);
+                <button type="button"
+                        class="slot-button @(IsSelectedSlot(slot) ? "slot-button-selected" : string.Empty) @(occupied ? "slot-button-busy" : string.Empty)"
+                        disabled="@occupied"
+                        @onclick="() => SelectSlot(slot)">
+                    <span>@slot.ToString("HH:mm")</span>
+                    <small>@(occupied ? "Busy" : "Free")</small>
+                </button>
+            }
+        </div>
+
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Step 2</span>
+                <h2>Customer details</h2>
+            </div>
+            <p>Attach an existing customer or create a new one from the same popup. Name and phone are mandatory for any new booking.</p>
+        </div>
+
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="appointmentCustomerSearch">Customer Search</label>
+                <input id="appointmentCustomerSearch" class="form-input" @bind="CustomerSearchText" @bind:event="oninput" placeholder="Search by name or phone" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentCustomer">Existing Customer (optional)</label>
+                <select id="appointmentCustomer" class="form-input" @bind="SelectedCustomerId">
+                    <option value="">Create from the customer details form</option>
+                    @foreach (var customer in FilteredCustomerOptions)
+                    {
+                        <option value="@customer.Id">@customer.FullName (@(string.IsNullOrWhiteSpace(customer.Phone) ? "No phone" : customer.Phone))</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="appointmentQuickCustomerName">Full Name</label>
+                <input id="appointmentQuickCustomerName" class="form-input" @bind="QuickCustomerModel.FullName" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentQuickCustomerPhone">Phone</label>
+                <input id="appointmentQuickCustomerPhone" class="form-input" @bind="QuickCustomerModel.Phone" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentQuickCustomerEmail">Email</label>
+                <input id="appointmentQuickCustomerEmail" class="form-input" @bind="QuickCustomerModel.Email" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentQuickCustomerNotes">Customer Notes</label>
+                <input id="appointmentQuickCustomerNotes" class="form-input" @bind="QuickCustomerModel.Notes" />
+            </div>
+
+            <div class="field">
+                <label for="appointmentNotes">Appointment Notes</label>
+                <input id="appointmentNotes" class="form-input" @bind="CreateModel.Notes" placeholder="Optional appointment notes" />
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Selected Customer</span>
+                <strong class="metric-value">@(SelectedCustomer?.FullName ?? "No customer")</strong>
+                <span class="metric-note">@((SelectedCustomer is null) ? "A new customer will be created from the entered name and phone." : "This existing customer will be attached to the appointment.")</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Phone</span>
+                <strong class="metric-value">@(SelectedCustomer is null ? (string.IsNullOrWhiteSpace(QuickCustomerModel.Phone) ? "Missing" : QuickCustomerModel.Phone) : string.IsNullOrWhiteSpace(SelectedCustomer.Phone) ? "Missing" : SelectedCustomer.Phone)</strong>
+                <span class="metric-note">Phone is mandatory so the branch can confirm, remind, or reschedule.</span>
+            </article>
+        </div>
+
+        <div class="invoice-actions">
+            <button type="button" class="submit-button" @onclick="CreateAppointmentAsync" disabled="@IsBusy">Create Appointment</button>
+            <button type="button" class="ghost-button" @onclick="CreateQuickCustomerAsync" disabled="@IsBusy">Create Customer Only</button>
+            <button type="button" class="ghost-button" @onclick="CloseCreateAppointmentModal" disabled="@IsBusy">Close</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@(ShowManageAppointmentModal && SelectedAppointment is not null)"
+                 Eyebrow="Manage Appointment"
+                 Title="@ManageAppointmentTitle"
+                 Description="Edit the booking from the same scheduler flow, or mark it as cancelled or no-show without leaving the table."
+                 OnClose="CloseManageAppointmentModal">
+        @if (SelectedAppointment is not null)
+        {
+            <div class="invoice-form-grid">
+                <div class="field">
+                    <label for="manageAppointmentCustomer">Customer</label>
+                    <select id="manageAppointmentCustomer" class="form-input" @bind="ManageSelectedCustomerId">
+                        <option value="">Select customer</option>
+                        @foreach (var customer in CustomerOptions)
+                        {
+                            <option value="@customer.Id">@customer.FullName (@(string.IsNullOrWhiteSpace(customer.Phone) ? "No phone" : customer.Phone))</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="manageAppointmentService">Service</label>
+                    <select id="manageAppointmentService" class="form-input" @bind="ManageSelectedServiceId">
+                        <option value="">Select service</option>
+                        @foreach (var service in ServiceOptions)
+                        {
+                            <option value="@service.Id">@GetServiceDisplayName(service) (@service.Price:0.## @service.CurrencyCode)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="manageAppointmentResource">Specialist / Resource</label>
+                    <select id="manageAppointmentResource" class="form-input" @bind="ManageAppointmentModel.ResourceName">
+                        <option value="">Unassigned resource</option>
+                        @foreach (var resource in ResourceOptions)
+                        {
+                            <option value="@resource.Username">@resource.Username (@resource.Role)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="manageAppointmentStartAt">Start</label>
+                    <input id="manageAppointmentStartAt" class="form-input" type="datetime-local" value="@ManageStartAtInput" @onchange="OnManageStartAtChanged" />
+                </div>
+
+                <div class="field">
+                    <label for="manageAppointmentEndAt">End</label>
+                    <input id="manageAppointmentEndAt" class="form-input" type="datetime-local" value="@ManageEndAtInput" @onchange="OnManageEndAtChanged" />
+                </div>
+
+                <div class="field">
+                    <label for="manageAppointmentNotes">Notes</label>
+                    <input id="manageAppointmentNotes" class="form-input" @bind="ManageAppointmentModel.Notes" />
+                </div>
+            </div>
+
+            <div class="invoice-actions">
+                <button type="button" class="submit-button" @onclick="UpdateSelectedAppointmentAsync" disabled="@IsBusy">Save Changes</button>
+                <button type="button" class="ghost-button" @onclick='() => MarkSelectedAppointmentStatusAsync("cancelled")' disabled="@IsBusy">Cancel Appointment</button>
+                <button type="button" class="ghost-button" @onclick='() => MarkSelectedAppointmentStatusAsync("no_show")' disabled="@IsBusy">Mark No Show</button>
+                <button type="button" class="ghost-button" @onclick="CloseManageAppointmentModal" disabled="@IsBusy">Close</button>
+            </div>
+        }
+    </ActionModal>
+</div>
+
+<style>
+    .scheduler-topbar { display:flex; justify-content:space-between; gap:16px; align-items:end; margin-top:18px; flex-wrap:wrap; }
+    .scheduler-nav { display:flex; gap:10px; flex-wrap:wrap; }
+    .active-filter-button { background:#205b57; color:#fff; border-color:#205b57; }
+    .scheduler-date-wrap { min-width:220px; }
+    .resource-chip-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
+    .resource-chip { border:1px solid rgba(144,116,95,0.18); background:rgba(255,255,255,0.82); border-radius:20px; padding:14px 16px; display:flex; flex-direction:column; align-items:flex-start; gap:4px; color:#2a1b18; box-shadow:0 12px 24px rgba(173,117,53,0.10); text-align:left; }
+    .resource-chip strong { font-size:1rem; }
+    .resource-chip span { font-size:.84rem; color:#6d5a57; font-weight:700; }
+    .resource-chip-active { outline:3px solid rgba(32,91,87,0.18); border-color:#205b57; transform:translateY(-1px); }
+    .slot-picker-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px; }
+    .slot-button { border:1px solid rgba(144,116,95,0.18); background:rgba(255,255,255,0.86); border-radius:16px; padding:12px; display:flex; flex-direction:column; gap:4px; align-items:flex-start; color:#2a1b18; font-weight:800; box-shadow:0 10px 22px rgba(173,117,53,0.09); }
+    .slot-button small { font-size:.78rem; color:#6e5b52; font-weight:700; }
+    .slot-button-selected { background:#205b57; color:#fff; border-color:#205b57; }
+    .slot-button-selected small { color:rgba(255,255,255,0.82); }
+    .slot-button-busy { background:#f6dfd9; color:#a8564a; }
+    .scheduler-shell { display:grid; grid-template-columns:260px 1fr; gap:18px; margin-top:20px; align-items:start; }
+    .scheduler-sidebar { display:grid; gap:14px; }
+    .scheduler-sidebar-card { padding:18px; border-radius:24px; background:rgba(255,255,255,0.72); box-shadow:0 22px 50px rgba(173,117,53,0.12); }
+    .scheduler-sidebar-title { font-size:.82rem; letter-spacing:.12em; text-transform:uppercase; color:#8b5038; margin-bottom:10px; font-weight:700; }
+    .scheduler-sidebar-value { font-size:1.65rem; font-weight:800; color:#2f1c18; }
+    .scheduler-sidebar-note { margin-top:8px; color:#6d5a57; line-height:1.5; }
+    .scheduler-board-wrap { overflow-x:auto; padding-bottom:4px; }
+    .scheduler-grid { display:grid; grid-template-columns:92px repeat(var(--scheduler-columns), minmax(220px, 1fr)); gap:14px; min-width:max-content; }
+    .scheduler-time-column, .scheduler-resource-column { display:grid; grid-template-rows:72px auto; gap:12px; }
+    .scheduler-time-header, .scheduler-resource-header { border-radius:24px; background:rgba(255,255,255,0.82); box-shadow:0 20px 45px rgba(173,117,53,0.12); padding:18px; }
+    .scheduler-resource-header strong { display:block; color:#241814; font-size:1.15rem; margin-bottom:6px; }
+    .scheduler-resource-header span, .scheduler-time-header { color:#6b544a; font-weight:700; }
+    .scheduler-time-slot { height:72px; display:flex; align-items:start; justify-content:center; color:#7a665d; font-weight:700; padding-top:4px; }
+    .scheduler-lane { position:relative; border-radius:28px; min-height:936px; background-color:rgba(255,255,255,0.66); overflow:hidden; box-shadow:inset 0 0 0 1px rgba(163,126,103,0.12); }
+    .scheduler-appointment-card { position:absolute; left:10px; right:10px; border-radius:18px; padding:12px 12px 10px; color:#231816; box-shadow:0 14px 28px rgba(102,67,54,0.18); overflow:hidden; border:1px solid rgba(255,255,255,0.55); }
+    .scheduler-appointment-time { font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; font-weight:800; opacity:.82; margin-bottom:6px; }
+    .scheduler-appointment-title { font-size:1rem; font-weight:800; margin-bottom:4px; }
+    .scheduler-appointment-meta { font-size:.88rem; line-height:1.35; }
+    .scheduler-appointment-notes { margin-top:8px; font-size:.82rem; line-height:1.4; opacity:.88; }
+    .agenda-week-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }
+    .agenda-day-card { background:rgba(255,255,255,0.78); border-radius:24px; padding:18px; box-shadow:0 18px 42px rgba(173,117,53,0.12); }
+    .agenda-day-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; color:#5f4a42; }
+    .agenda-day-header strong { color:#261a17; font-size:1.05rem; }
+    .agenda-item-card { border-radius:18px; padding:12px; margin-bottom:10px; color:#231816; box-shadow:0 10px 22px rgba(102,67,54,0.14); }
+    .agenda-item-time { font-size:.76rem; letter-spacing:.08em; text-transform:uppercase; font-weight:800; margin-bottom:5px; opacity:.85; }
+    .agenda-item-title { font-weight:800; margin-bottom:4px; }
+    .agenda-item-meta { font-size:.88rem; line-height:1.35; }
+    .appointment-status-scheduled { background:linear-gradient(180deg, #9ad6ff 0%, #72b6eb 100%); }
+    .appointment-status-confirmed { background:linear-gradient(180deg, #b9ef95 0%, #8fda69 100%); }
+    .appointment-status-completed { background:linear-gradient(180deg, #ffc09f 0%, #f39d7a 100%); }
+    .appointment-status-cancelled { background:linear-gradient(180deg, #d6d1d8 0%, #b5afba 100%); }
+    .appointment-status-no-show { background:linear-gradient(180deg, #cfc8d2 0%, #a9a2ad 100%); }
+    @@media (max-width:1180px) { .scheduler-shell { grid-template-columns:1fr; } }
+</style>
+
+@code {
+    private const int SchedulerStartHour = 10;
+    private const int SchedulerEndHour = 23;
+    private const double PixelsPerMinute = 1.2d;
+
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool ShowCreateAppointmentModal { get; set; }
+    private bool ShowManageAppointmentModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private string SelectedCustomerId { get; set; } = string.Empty;
+    private string ManageSelectedCustomerId { get; set; } = string.Empty;
+    private string ManageSelectedServiceId { get; set; } = string.Empty;
+    private string CustomerSearchText { get; set; } = string.Empty;
+    private int TotalCount { get; set; }
+    private DateTime SelectedScheduleDate { get; set; } = DateTime.Today;
+    private string ScheduleMode { get; set; } = "day";
+    private DateTime? SelectedSlotStart { get; set; }
+    private List<AppointmentListItemModel> AppointmentItems { get; set; } = [];
+    private AppointmentScheduleBoardModel ScheduleBoard { get; set; } = new();
+    private List<AppointmentResourceModel> ResourceOptions { get; set; } = [];
+    private List<CustomerListItemModel> CustomerOptions { get; set; } = [];
+    private List<ServiceListItemModel> ServiceOptions { get; set; } = [];
+    private CreateAppointmentRequestModel CreateModel { get; set; } = CreateDefaultAppointmentModel(DateTime.Today);
+    private UpdateAppointmentRequestModel ManageAppointmentModel { get; set; } = new();
+    private CreateCustomerRequestModel QuickCustomerModel { get; set; } = new();
+    private AppointmentListItemModel? SelectedAppointment { get; set; }
+    private static IReadOnlyList<string> AppointmentStatuses => ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
+
+    private string BranchLabel => string.IsNullOrWhiteSpace(SessionState.BranchName) ? "Current Branch" : SessionState.BranchName;
+    private string AppointmentsTitle => string.IsNullOrWhiteSpace(SessionState.BranchName) ? "Branch appointments workspace" : $"{SessionState.BranchName} appointments workspace";
+    private string AppointmentsDescription => "This screen is reserved for branch scheduling, specialist planning, and front-desk appointment flow.";
+    private string AppointmentFocus => SessionState.IsHr ? "Resources & scheduling" : SessionState.IsBranchManager ? "Capacity & availability" : "Reception support";
+    private IReadOnlyList<AppointmentScheduleColumnModel> ScheduleColumns => ScheduleBoard.Columns;
+    private IReadOnlyList<string> HourLabels => Enumerable.Range(SchedulerStartHour, SchedulerEndHour - SchedulerStartHour).Select(FormatHourLabel).ToList();
+    private string SchedulerColumnsStyle => $"--scheduler-columns:{Math.Max(1, ScheduleColumns.Count)};";
+    private IReadOnlyList<WeeklyAgendaDay> WeeklyAgendaDays => BuildWeeklyAgendaDays();
+    private IReadOnlyList<AgendaDayGroup> AgendaGroups => BuildAgendaGroups();
+    private CustomerListItemModel? SelectedCustomer => Guid.TryParse(SelectedCustomerId, out var customerId) ? CustomerOptions.FirstOrDefault(x => x.Id == customerId) : null;
+    private bool HasSelectedSlot => SelectedSlotStart.HasValue;
+    private string SelectedServiceId
+    {
+        get => CreateModel.ServiceId?.ToString() ?? string.Empty;
+        set
+        {
+            CreateModel.ServiceId = Guid.TryParse(value, out var parsedId) ? parsedId : null;
+            CreateModel.EndAt = CreateModel.StartAt.AddMinutes(SelectedDurationMinutes);
+        }
+    }
+    private ServiceListItemModel? SelectedService => CreateModel.ServiceId is null ? null : ServiceOptions.FirstOrDefault(x => x.Id == CreateModel.ServiceId.Value);
+    private int SelectedDurationMinutes => Math.Max(30, SelectedService?.DurationMin ?? 60);
+    private IReadOnlyList<DateTime> AvailableSlots => BuildAvailableSlots();
+    private IReadOnlyList<CustomerListItemModel> FilteredCustomerOptions
+        => string.IsNullOrWhiteSpace(CustomerSearchText)
+            ? CustomerOptions
+            : CustomerOptions.Where(customer =>
+                    customer.FullName.Contains(CustomerSearchText.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(customer.Phone) && customer.Phone.Contains(CustomerSearchText.Trim(), StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+    private string AppointmentWindowLabel => $"{CreateModel.StartAt:dd MMM HH:mm} -> {CreateModel.EndAt:HH:mm}";
+    private string ManageAppointmentTitle => SelectedAppointment is null
+        ? "Edit appointment"
+        : $"{(string.IsNullOrWhiteSpace(SelectedAppointment.CustomerName) ? "Walk-in" : SelectedAppointment.CustomerName)} appointment";
+    private string StartAtInput
+    {
+        get => CreateModel.StartAt.ToString("yyyy-MM-ddTHH:mm");
+        set { if (DateTime.TryParse(value, out var parsed)) CreateModel.StartAt = parsed; }
+    }
+    private string EndAtInput
+    {
+        get => CreateModel.EndAt.ToString("yyyy-MM-ddTHH:mm");
+        set { if (DateTime.TryParse(value, out var parsed)) CreateModel.EndAt = parsed; }
+    }
+    private string ManageStartAtInput
+    {
+        get => ManageAppointmentModel.StartAt.ToString("yyyy-MM-ddTHH:mm");
+        set { if (DateTime.TryParse(value, out var parsed)) ManageAppointmentModel.StartAt = parsed; }
+    }
+    private string ManageEndAtInput
+    {
+        get => ManageAppointmentModel.EndAt.ToString("yyyy-MM-ddTHH:mm");
+        set { if (DateTime.TryParse(value, out var parsed)) ManageAppointmentModel.EndAt = parsed; }
+    }
+
+    private void OnStartAtChanged(ChangeEventArgs args) => StartAtInput = args.Value?.ToString() ?? StartAtInput;
+    private void OnEndAtChanged(ChangeEventArgs args) => EndAtInput = args.Value?.ToString() ?? EndAtInput;
+    private void OnManageStartAtChanged(ChangeEventArgs args) => ManageStartAtInput = args.Value?.ToString() ?? ManageStartAtInput;
+    private void OnManageEndAtChanged(ChangeEventArgs args) => ManageEndAtInput = args.Value?.ToString() ?? ManageEndAtInput;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked) return;
+        _sessionChecked = true;
+
+        try
+        {
+            await SessionState.InitializeAsync();
+            if (!SessionState.IsAuthenticated) { NavigationManager.NavigateTo("/"); return; }
+            if (!SessionState.CanAccessAppointments) { NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace"); return; }
+
+            SelectedScheduleDate = DateTime.Today;
+            ResetCreateModelForDate(SelectedScheduleDate);
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        ErrorMessage = string.Empty;
+
+        var rangeStart = ScheduleMode == "week" ? StartOfWeek(SelectedScheduleDate) : SelectedScheduleDate.Date;
+        var rangeEnd = ScheduleMode == "week" ? StartOfWeek(SelectedScheduleDate).AddDays(7) : SelectedScheduleDate.Date.AddDays(1);
+
+        var appointmentsTask = AppointmentsApiClient.GetAppointmentsAsync(SessionState, null, null, rangeStart, rangeEnd, 1, 300);
+        var scheduleTask = AppointmentsApiClient.GetScheduleAsync(SessionState, SelectedScheduleDate);
+        var customersTask = CustomersApiClient.GetCustomersAsync(SessionState, null, 1, 200);
+        var resourcesTask = AppointmentsApiClient.GetResourcesAsync(SessionState);
+        var servicesTask = ServicesApiClient.GetServicesAsync(SessionState, null, 1, 200);
+        await Task.WhenAll(appointmentsTask, scheduleTask, customersTask, resourcesTask, servicesTask);
+
+        AppointmentItems = appointmentsTask.Result.Items
+            .Where(item => item.StartAt.ToLocalTime() >= rangeStart && item.StartAt.ToLocalTime() < rangeEnd)
+            .OrderBy(item => item.StartAt)
+            .ToList();
+        ScheduleBoard = scheduleTask.Result;
+        TotalCount = AppointmentItems.Count;
+        CustomerOptions = customersTask.Result.Items.Where(x => x.IsActive).OrderBy(x => x.FullName).ToList();
+        ResourceOptions = resourcesTask.Result.OrderBy(x => x.Role).ThenBy(x => x.Username).ToList();
+        ServiceOptions = servicesTask.Result.Items.Where(x => x.IsActive).OrderBy(GetServiceDisplayName).ToList();
+    }
+
+    private async Task RefreshAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try { await LoadDataAsync(); FlashMessage = "Appointments refreshed successfully."; }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task LoadTodayAsync() { SelectedScheduleDate = DateTime.Today; await ReloadScheduleDateAsync(); }
+    private async Task LoadPreviousDayAsync() { SelectedScheduleDate = SelectedScheduleDate.AddDays(-1); await ReloadScheduleDateAsync(); }
+    private async Task LoadNextDayAsync() { SelectedScheduleDate = SelectedScheduleDate.AddDays(1); await ReloadScheduleDateAsync(); }
+    private async Task ChangeScheduleModeAsync(string mode)
+    {
+        ScheduleMode = mode == "week" ? "week" : mode == "agenda" ? "agenda" : "day";
+        await ReloadScheduleDateAsync();
+    }
+
+    private async Task OnScheduleDateChanged(ChangeEventArgs args)
+    {
+        if (DateTime.TryParse(args.Value?.ToString(), out var parsed))
+        {
+            SelectedScheduleDate = parsed.Date;
+            await ReloadScheduleDateAsync();
+        }
+    }
+
+    private async Task ReloadScheduleDateAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            ResetCreateModelForDate(SelectedScheduleDate);
+            await LoadDataAsync();
+            FlashMessage = $"Schedule loaded for {SelectedScheduleDate:dddd, dd MMM yyyy}.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task CreateAppointmentAsync()
+    {
+        if (!HasSelectedSlot)
+        {
+            ErrorMessage = "Choose a free slot before creating the appointment.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        if (CreateModel.ServiceId is null)
+        {
+            ErrorMessage = "Select a branch service before booking the appointment.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            var parsedCustomerId = await ResolveCustomerIdAsync();
+            CreateModel.CustomerId = parsedCustomerId;
+            await AppointmentsApiClient.CreateAppointmentAsync(SessionState, CreateModel);
+            FlashMessage = "Appointment created successfully.";
+            SelectedCustomerId = string.Empty;
+            QuickCustomerModel = new CreateCustomerRequestModel();
+            ResetCreateModelForDate(SelectedScheduleDate);
+            ShowCreateAppointmentModal = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task CreateQuickCustomerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(QuickCustomerModel.FullName) || string.IsNullOrWhiteSpace(QuickCustomerModel.Phone))
+        {
+            ErrorMessage = "Customer name and phone are required before booking an appointment.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            var customerId = await CustomersApiClient.CreateCustomerAsync(SessionState, QuickCustomerModel);
+            QuickCustomerModel = new CreateCustomerRequestModel();
+            await LoadDataAsync();
+            SelectedCustomerId = customerId.ToString();
+            FlashMessage = "Customer created and selected for the appointment.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private void OpenManageAppointmentModal(AppointmentScheduleEntryModel item)
+    {
+        var source = AppointmentItems.FirstOrDefault(appointment => appointment.Id == item.Id);
+        if (source is not null)
+            OpenManageAppointmentModal(source);
+    }
+
+    private void OpenManageAppointmentModal(AppointmentListItemModel item)
+    {
+        SelectedAppointment = item;
+        ManageAppointmentModel = new UpdateAppointmentRequestModel
+        {
+            CustomerId = item.CustomerId,
+            ServiceId = item.ServiceId,
+            StartAt = item.StartAt.ToLocalTime(),
+            EndAt = item.EndAt.ToLocalTime(),
+            ResourceName = item.ResourceName ?? string.Empty,
+            Notes = item.Notes ?? string.Empty
+        };
+        ManageSelectedCustomerId = item.CustomerId?.ToString() ?? string.Empty;
+        ManageSelectedServiceId = item.ServiceId?.ToString() ?? string.Empty;
+        ShowManageAppointmentModal = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+    }
+
+    private Task CloseManageAppointmentModal()
+    {
+        ShowManageAppointmentModal = false;
+        SelectedAppointment = null;
+        ManageAppointmentModel = new UpdateAppointmentRequestModel();
+        ManageSelectedCustomerId = string.Empty;
+        ManageSelectedServiceId = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private async Task UpdateSelectedAppointmentAsync()
+    {
+        if (SelectedAppointment is null)
+            return;
+
+        if (!Guid.TryParse(ManageSelectedCustomerId, out var customerId))
+        {
+            ErrorMessage = "Select the appointment customer first.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        if (!Guid.TryParse(ManageSelectedServiceId, out var serviceId))
+        {
+            ErrorMessage = "Select the appointment service first.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        ManageAppointmentModel.CustomerId = customerId;
+        ManageAppointmentModel.ServiceId = serviceId;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            await AppointmentsApiClient.UpdateAppointmentAsync(SessionState, SelectedAppointment.Id, ManageAppointmentModel);
+            FlashMessage = "Appointment updated successfully.";
+            ShowManageAppointmentModal = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task QuickMarkAppointmentStatusAsync(AppointmentListItemModel item, string status)
+    {
+        OpenManageAppointmentModal(item);
+        await MarkSelectedAppointmentStatusAsync(status);
+    }
+
+    private async Task MarkSelectedAppointmentStatusAsync(string status)
+    {
+        if (SelectedAppointment is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            await AppointmentsApiClient.UpdateStatusAsync(SessionState, SelectedAppointment.Id, new UpdateAppointmentStatusRequestModel { Status = status });
+            FlashMessage = $"Appointment marked as {MapStatusLabel(status)}.";
+            ShowManageAppointmentModal = false;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task UpdateStatusAsync(AppointmentListItemModel item, string? newStatus)
+    {
+        if (string.IsNullOrWhiteSpace(newStatus)) return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            await AppointmentsApiClient.UpdateStatusAsync(SessionState, item.Id, new UpdateAppointmentStatusRequestModel { Status = newStatus });
+            FlashMessage = "Appointment status updated successfully.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task<Guid> ResolveCustomerIdAsync()
+    {
+        if (Guid.TryParse(SelectedCustomerId, out var existingCustomerId))
+            return existingCustomerId;
+
+        if (string.IsNullOrWhiteSpace(QuickCustomerModel.FullName) || string.IsNullOrWhiteSpace(QuickCustomerModel.Phone))
+            throw new InvalidOperationException("Customer name and phone are required for a new appointment.");
+
+        var customerId = await CustomersApiClient.CreateCustomerAsync(SessionState, QuickCustomerModel);
+        SelectedCustomerId = customerId.ToString();
+        return customerId;
+    }
+
+    private void SelectResource(string resourceName)
+    {
+        CreateModel.ResourceName = resourceName;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+    }
+
+    private void SelectSlot(DateTime slotStart)
+    {
+        SelectedSlotStart = slotStart;
+        CreateModel.StartAt = slotStart;
+        CreateModel.EndAt = slotStart.AddMinutes(SelectedDurationMinutes);
+        ShowCreateAppointmentModal = true;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+    }
+
+    private void OpenCreateAppointmentModal()
+    {
+        ShowCreateAppointmentModal = true;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+    }
+
+    private Task CloseCreateAppointmentModal()
+    {
+        ShowCreateAppointmentModal = false;
+        return Task.CompletedTask;
+    }
+
+    private bool IsSelectedSlot(DateTime slotStart)
+        => CreateModel.StartAt == slotStart;
+
+    private bool IsSlotOccupied(DateTime slotStart)
+    {
+        var slotEnd = slotStart.AddMinutes(SelectedDurationMinutes);
+        return GetSelectedResourceItems()
+            .Any(item =>
+            {
+                var itemStart = item.StartAt.ToLocalTime();
+                var itemEnd = item.EndAt.ToLocalTime();
+                return slotStart < itemEnd && slotEnd > itemStart;
+            });
+    }
+
+    private IReadOnlyList<AppointmentScheduleEntryModel> GetSelectedResourceItems()
+    {
+        var resourceName = string.IsNullOrWhiteSpace(CreateModel.ResourceName) ? "Unassigned" : CreateModel.ResourceName.Trim();
+        var column = ScheduleColumns.FirstOrDefault(x => string.Equals(x.ResourceName, resourceName, StringComparison.OrdinalIgnoreCase))
+                     ?? ScheduleColumns.FirstOrDefault(x => x.IsUnassigned);
+        return column?.Items ?? [];
+    }
+
+    private IReadOnlyList<DateTime> BuildAvailableSlots()
+    {
+        var start = SelectedScheduleDate.Date.AddHours(SchedulerStartHour);
+        var end = SelectedScheduleDate.Date.AddHours(SchedulerEndHour);
+        var slots = new List<DateTime>();
+        var cursor = start;
+        while (cursor.AddMinutes(SelectedDurationMinutes) <= end)
+        {
+            slots.Add(cursor);
+            cursor = cursor.AddMinutes(30);
+        }
+
+        return slots;
+    }
+
+    private void ResetCreateModelForDate(DateTime date)
+    {
+        SelectedSlotStart = null;
+        CreateModel = CreateDefaultAppointmentModel(date);
+    }
+
+    private static CreateAppointmentRequestModel CreateDefaultAppointmentModel(DateTime date)
+    {
+        var start = date.Date.AddHours(12);
+        return new CreateAppointmentRequestModel
+        {
+            ServiceId = null,
+            StartAt = start,
+            EndAt = start.AddHours(1),
+            Notes = string.Empty,
+            ResourceName = string.Empty
+        };
+    }
+
+    private static string FormatHourLabel(int hour) => DateTime.Today.AddHours(hour).ToString("htt").ToLowerInvariant();
+
+    private static string MapStatusLabel(string status)
+        => status switch
+        {
+            "scheduled" => "Scheduled",
+            "confirmed" => "Confirmed",
+            "completed" => "Completed",
+            "cancelled" => "Cancelled",
+            "no_show" => "No Show",
+            _ => status
+        };
+
+    private static string GetAppointmentStatusClass(string status)
+        => status switch
+        {
+            "confirmed" => "appointment-status-confirmed",
+            "completed" => "appointment-status-completed",
+            "cancelled" => "appointment-status-cancelled",
+            "no_show" => "appointment-status-no-show",
+            _ => "appointment-status-scheduled"
+        };
+
+    private string GetLaneBackgroundStyle()
+    {
+        var hourHeight = 60d * PixelsPerMinute;
+        return $"height:{(SchedulerEndHour - SchedulerStartHour) * hourHeight:0}px;background-image: repeating-linear-gradient(to bottom, rgba(151,118,96,0.10) 0, rgba(151,118,96,0.10) 1px, transparent 1px, transparent {hourHeight:0}px);";
+    }
+
+    private string GetAppointmentCardStyle(AppointmentScheduleEntryModel item, string specialistKey)
+    {
+        var localStart = item.StartAt.ToLocalTime();
+        var localEnd = item.EndAt.ToLocalTime();
+        var scheduleStart = SelectedScheduleDate.Date.AddHours(SchedulerStartHour);
+        var topMinutes = Math.Max(0d, (localStart - scheduleStart).TotalMinutes);
+        var durationMinutes = Math.Max(35d, (localEnd - localStart).TotalMinutes);
+        return $"top:{topMinutes * PixelsPerMinute:0}px;height:{durationMinutes * PixelsPerMinute:0}px;{BuildSpecialistColorStyle(specialistKey)}";
+    }
+
+    private static string GetServiceDisplayName(ServiceListItemModel service)
+        => !string.IsNullOrWhiteSpace(service.NameEn)
+            ? service.NameEn
+            : !string.IsNullOrWhiteSpace(service.NameAr)
+                ? service.NameAr
+                : "Unnamed service";
+
+    private string GetAgendaItemStyle(AppointmentListItemModel item)
+        => BuildSpecialistColorStyle(string.IsNullOrWhiteSpace(item.ResourceName) ? item.CustomerName : item.ResourceName);
+
+    private static string BuildSpecialistColorStyle(string key)
+    {
+        var palette = new[]
+        {
+            ("#9ad6ff", "#72b6eb"),
+            ("#b9ef95", "#8fda69"),
+            ("#ffc09f", "#f39d7a"),
+            ("#dbc6ff", "#bfa5f2"),
+            ("#f7c4de", "#ea93c5"),
+            ("#ffe29a", "#f2bf59"),
+            ("#b4efe5", "#7bd5c6")
+        };
+
+        var index = Math.Abs((key ?? string.Empty).GetHashCode()) % palette.Length;
+        var (from, to) = palette[index];
+        return $"background:linear-gradient(180deg, {from} 0%, {to} 100%);";
+    }
+
+    private IReadOnlyList<WeeklyAgendaDay> BuildWeeklyAgendaDays()
+    {
+        var start = StartOfWeek(SelectedScheduleDate);
+        return Enumerable.Range(0, 7)
+            .Select(offset =>
+            {
+                var day = start.AddDays(offset);
+                return new WeeklyAgendaDay(
+                    day,
+                    AppointmentItems
+                        .Where(item => item.StartAt.ToLocalTime().Date == day.Date)
+                        .OrderBy(item => item.StartAt)
+                        .ToList());
+            })
+            .ToList();
+    }
+
+    private IReadOnlyList<AgendaDayGroup> BuildAgendaGroups()
+    {
+        return AppointmentItems
+            .OrderBy(item => item.StartAt)
+            .GroupBy(item => item.StartAt.ToLocalTime().Date)
+            .Select(group => new AgendaDayGroup(group.Key, group.OrderBy(item => item.StartAt).ToList()))
+            .ToList();
+    }
+
+    private static DateTime StartOfWeek(DateTime date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.Date.AddDays(-diff);
+    }
+
+    private sealed record WeeklyAgendaDay(DateTime Date, List<AppointmentListItemModel> Items);
+    private sealed record AgendaDayGroup(DateTime Date, List<AppointmentListItemModel> Items);
+}

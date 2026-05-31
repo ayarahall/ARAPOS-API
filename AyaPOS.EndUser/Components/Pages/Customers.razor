@@ -1,0 +1,476 @@
+@page "/customers"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Ayapos.EndUser.Models.Customers
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Customers
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject CustomersApiClient CustomersApiClient
+
+<PageTitle>Customers</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="Customers" Description="Manage customer details, spot repeat visitors quickly, and prepare clean customer records before creating invoices." SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="customers" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="toolbar-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Customer Actions</span>
+                <h2 style="margin: 12px 0 0;">Keep the customer page focused and clean</h2>
+            </div>
+            <p>Use the popup action to add a customer, then return straight to the table and branch workflow without a large fixed form taking over the page.</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="submit-button" @onclick="OpenCreateCustomerModal">Add Customer</button>
+            <button class="ghost-button" @onclick="RefreshAsync" disabled="@IsLoading">@(IsLoading ? "Refreshing..." : "Refresh List")</button>
+        </div>
+    </section>
+
+    <ActionModal Visible="@ShowCreateCustomerModal"
+                 Eyebrow="New Customer"
+                 Title="Add a customer without leaving the workspace"
+                 Description="Save the basics now, then attach the customer directly to invoices, appointments, and branch follow-up."
+                 OnClose="CloseCreateCustomerModal">
+        <ChildContent>
+            <div class="invoice-form-grid">
+                <div class="field">
+                    <label for="customerName">Full Name</label>
+                    <input id="customerName" class="form-input" @bind="CreateModel.FullName" placeholder="Customer full name" />
+                </div>
+
+                <div class="field">
+                    <label for="customerPhone">Phone</label>
+                    <input id="customerPhone" class="form-input" @bind="CreateModel.Phone" placeholder="050 000 0000" />
+                </div>
+
+                <div class="field">
+                    <label for="customerEmail">Email</label>
+                    <input id="customerEmail" class="form-input" @bind="CreateModel.Email" placeholder="customer@example.com" />
+                </div>
+
+                <div class="field">
+                    <label for="customerNotes">Notes</label>
+                    <input id="customerNotes" class="form-input" @bind="CreateModel.Notes" placeholder="VIP, walk-in, follow-up, preferences..." />
+                </div>
+            </div>
+        </ChildContent>
+        <FooterContent>
+            <button class="ghost-button" @onclick="CloseCreateCustomerModal">Cancel</button>
+            <button class="submit-button" @onclick="CreateCustomerAsync" disabled="@IsSaving">@(IsSaving ? "Saving..." : "Save Customer")</button>
+        </FooterContent>
+    </ActionModal>
+
+    <section class="toolbar-panel" style="margin-top:20px;">
+        <div class="toolbar-grid customers-toolbar-grid">
+            <div>
+                <input class="form-input" value="@SearchText" @oninput="OnSearchInputAsync" placeholder="Search by name, phone, or email" />
+                <div class="search-hint">Results refresh automatically after a short pause.</div>
+            </div>
+
+            <select class="form-input compact-input" @bind="PageSize" @bind:after="PageSizeChangedAsync">
+                <option value="10">10 / page</option>
+                <option value="25">25 / page</option>
+                <option value="50">50 / page</option>
+            </select>
+
+            <button class="submit-button" @onclick="RefreshAsync" disabled="@IsLoading">@(IsLoading ? "Refreshing..." : "Refresh")</button>
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Visible Customers</span>
+            <strong class="metric-value">@TotalCount</strong>
+            <span class="metric-note">Current customer results for this tenant workspace.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Active on Screen</span>
+            <strong class="metric-value">@ActiveCount</strong>
+            <span class="metric-note">Customers on this page who are currently active.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Repeat Buyers</span>
+            <strong class="metric-value">@ReturningCount</strong>
+            <span class="metric-note">Customers showing at least one recorded invoice.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Page Status</span>
+            <strong class="metric-value">@PageSummary</strong>
+            <span class="metric-note">Use search or paging to explore the customer base.</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Quick Picks</span>
+                <h2>Customers worth surfacing first</h2>
+            </div>
+            <p>Recent or repeat customers are highlighted here so the cashier can identify them faster during checkout.</p>
+        </div>
+
+        @if (IsLoading && CustomerItems.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">Loading customers...</div>
+        }
+        else if (FeaturedCustomers.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">No customers are available yet. Add the first customer to start building a reusable checkout flow.</div>
+        }
+        else
+        {
+            <div class="featured-products-grid">
+                @foreach (var customer in FeaturedCustomers)
+                {
+                    <article class="product-feature-card">
+                        <div class="product-feature-topline">
+                            <span class="status-pill @(customer.IsActive ? "active" : "inactive")">@(customer.IsActive ? "Active" : "Inactive")</span>
+                            <span class="product-feature-id">@GetCompactCode(customer)</span>
+                        </div>
+                        <h3>@customer.FullName</h3>
+                        <div class="product-feature-price">@GetInvoiceSummary(customer)</div>
+                        <div class="product-feature-meta">Phone: @(string.IsNullOrWhiteSpace(customer.Phone) ? "Not set" : customer.Phone)</div>
+                        <div class="product-feature-meta">Email: @(string.IsNullOrWhiteSpace(customer.Email) ? "Not set" : customer.Email)</div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="products-table-wrap">
+        @if (!IsLoading && CustomerItems.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">No customers found yet.</div>
+        }
+        else if (CustomerItems.Count > 0)
+        {
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Invoice Count</th>
+                        <th>Last Invoice</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var customer in CustomerItems)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@customer.FullName</div>
+                                <div class="table-secondary-cell">@GetCompactCode(customer)</div>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(customer.Phone) ? "-" : customer.Phone)</td>
+                            <td>@(string.IsNullOrWhiteSpace(customer.Email) ? "-" : customer.Email)</td>
+                            <td>@customer.InvoiceCount</td>
+                            <td>@FormatLastInvoice(customer.LastInvoiceAt)</td>
+                            <td>
+                                <span class="status-pill @(customer.IsActive ? "active" : "inactive")">
+                                    @(customer.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </td>
+                            <td>
+                                <button class="ghost-button" @onclick="() => SelectCustomer(customer)">Manage</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="pagination-panel">
+        <button class="ghost-button" @onclick="PreviousPageAsync" disabled="@(IsLoading || CurrentPage <= 1)">Previous</button>
+        <div class="pagination-summary">@PageSummary</div>
+        <button class="ghost-button" @onclick="NextPageAsync" disabled="@(IsLoading || CurrentPage >= TotalPages)">Next</button>
+    </section>
+
+    <ActionModal Visible="@(ShowManageCustomerModal && SelectedCustomer is not null)"
+                 Eyebrow="Manage Customer"
+                 Title="@ManageCustomerTitle"
+                 Description="Update the customer profile in a focused popup, then jump back into the branch workflow immediately."
+                 OnClose="CloseManageCustomerModal">
+        @if (SelectedCustomer is not null)
+        {
+            <div class="invoice-form-grid">
+                <div class="field">
+                    <label for="selectedCustomerName">Full Name</label>
+                    <input id="selectedCustomerName" class="form-input" @bind="UpdateModel.FullName" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedCustomerPhone">Phone</label>
+                    <input id="selectedCustomerPhone" class="form-input" @bind="UpdateModel.Phone" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedCustomerEmail">Email</label>
+                    <input id="selectedCustomerEmail" class="form-input" @bind="UpdateModel.Email" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedCustomerNotes">Notes</label>
+                    <input id="selectedCustomerNotes" class="form-input" @bind="UpdateModel.Notes" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedCustomerStatus">Status</label>
+                    <select id="selectedCustomerStatus" class="form-input" @bind="SelectedCustomerStatusValue">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="action-modal-footer">
+                <button class="ghost-button" @onclick="ToggleSelectedCustomerActiveAsync" disabled="@(IsSaving || IsLoading)">@(SelectedCustomer.IsActive ? "Deactivate Customer" : "Activate Customer")</button>
+                <button class="submit-button" @onclick="UpdateCustomerAsync" disabled="@(IsSaving || IsLoading)">Update Customer</button>
+            </div>
+        }
+    </ActionModal>
+</div>
+
+@code {
+    private CancellationTokenSource? _searchDebounceCts;
+    private bool _sessionChecked;
+    private bool _disposed;
+    private bool IsLoading { get; set; }
+    private bool IsSaving { get; set; }
+    private bool ShowCreateCustomerModal { get; set; }
+    private bool ShowManageCustomerModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private string SearchText { get; set; } = string.Empty;
+    private int TotalCount { get; set; }
+    private int CurrentPage { get; set; } = 1;
+    private int PageSize { get; set; } = 25;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+    private int ActiveCount => CustomerItems.Count(x => x.IsActive);
+    private int ReturningCount => CustomerItems.Count(x => x.InvoiceCount > 0);
+    private IReadOnlyList<CustomerListItemModel> FeaturedCustomers => CustomerItems
+        .OrderByDescending(x => x.InvoiceCount)
+        .ThenByDescending(x => x.LastInvoiceAt ?? DateTime.MinValue)
+        .ThenBy(x => x.FullName)
+        .Take(4)
+        .ToList();
+    private string PageSummary => TotalCount == 0 ? "No results" : $"Page {CurrentPage} of {TotalPages}";
+    private string ManageCustomerTitle => SelectedCustomer?.FullName ?? "Manage customer";
+    private CreateCustomerRequestModel CreateModel { get; set; } = new();
+    private UpdateCustomerRequestModel UpdateModel { get; set; } = new();
+    private List<CustomerListItemModel> CustomerItems { get; set; } = [];
+    private CustomerListItemModel? SelectedCustomer { get; set; }
+    private string SelectedCustomerStatusValue { get; set; } = "true";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked) return;
+        _sessionChecked = true;
+        await SessionState.InitializeAsync();
+        if (!SessionState.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/");
+            return;
+        }
+        if (!SessionState.CanAccessCustomers)
+        {
+            NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+            return;
+        }
+        await LoadCustomersAsync();
+        StateHasChanged();
+    }
+
+    private async Task CreateCustomerAsync()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        if (string.IsNullOrWhiteSpace(CreateModel.FullName))
+        {
+            ErrorMessage = "Enter the customer name first.";
+            return;
+        }
+        IsSaving = true;
+        try
+        {
+            await CustomersApiClient.CreateCustomerAsync(SessionState, CreateModel);
+            CreateModel = new CreateCustomerRequestModel();
+            ShowCreateCustomerModal = false;
+            FlashMessage = "Customer created successfully.";
+            await RefreshAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsSaving = false; }
+    }
+
+    private async Task OnSearchInputAsync(ChangeEventArgs args)
+    {
+        SearchText = args.Value?.ToString() ?? string.Empty;
+        CurrentPage = 1;
+        await QueueSearchAsync();
+    }
+
+    private async Task QueueSearchAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        _searchDebounceCts = new CancellationTokenSource();
+        try { await Task.Delay(350, _searchDebounceCts.Token); }
+        catch (TaskCanceledException) { return; }
+        if (_disposed || !SessionState.IsAuthenticated) return;
+        await InvokeAsync(LoadCustomersAsync);
+    }
+
+    private async Task RefreshAsync() { CurrentPage = 1; await LoadCustomersAsync(); }
+    private async Task PageSizeChangedAsync() { CurrentPage = 1; await LoadCustomersAsync(); }
+    private async Task PreviousPageAsync() { if (CurrentPage <= 1) return; CurrentPage--; await LoadCustomersAsync(); }
+    private async Task NextPageAsync() { if (CurrentPage >= TotalPages) return; CurrentPage++; await LoadCustomersAsync(); }
+
+    private async Task LoadCustomersAsync()
+    {
+        if (!SessionState.IsAuthenticated) return;
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        try
+        {
+            var result = await CustomersApiClient.GetCustomersAsync(SessionState, SearchText, CurrentPage, PageSize);
+            CustomerItems = result.Items.ToList();
+            TotalCount = result.Total;
+            if (CurrentPage > TotalPages) CurrentPage = TotalPages;
+
+            if (SelectedCustomer is not null)
+            {
+                SelectedCustomer = CustomerItems.FirstOrDefault(x => x.Id == SelectedCustomer.Id);
+                if (SelectedCustomer is not null)
+                {
+                    UpdateModel = MapUpdateModel(SelectedCustomer);
+                    SelectedCustomerStatusValue = SelectedCustomer.IsActive ? "true" : "false";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            CustomerItems = [];
+            TotalCount = 0;
+        }
+        finally { IsLoading = false; }
+    }
+
+    private void SelectCustomer(CustomerListItemModel customer)
+    {
+        SelectedCustomer = customer;
+        UpdateModel = MapUpdateModel(customer);
+        SelectedCustomerStatusValue = customer.IsActive ? "true" : "false";
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowManageCustomerModal = true;
+    }
+
+    private void ClearSelectedCustomer()
+    {
+        SelectedCustomer = null;
+        UpdateModel = new UpdateCustomerRequestModel();
+        SelectedCustomerStatusValue = "true";
+        ShowManageCustomerModal = false;
+    }
+
+    private Task CloseManageCustomerModal()
+    {
+        ClearSelectedCustomer();
+        return Task.CompletedTask;
+    }
+
+    private void OpenCreateCustomerModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowCreateCustomerModal = true;
+    }
+
+    private void CloseCreateCustomerModal()
+    {
+        ShowCreateCustomerModal = false;
+        CreateModel = new CreateCustomerRequestModel();
+    }
+
+    private async Task UpdateCustomerAsync()
+    {
+        if (SelectedCustomer is null)
+            return;
+
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        IsSaving = true;
+
+        try
+        {
+            UpdateModel.IsActive = string.Equals(SelectedCustomerStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await CustomersApiClient.UpdateCustomerAsync(SessionState, SelectedCustomer.Id, UpdateModel);
+            ShowManageCustomerModal = false;
+            FlashMessage = "Customer updated successfully.";
+            await LoadCustomersAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private async Task ToggleSelectedCustomerActiveAsync()
+    {
+        if (SelectedCustomer is null)
+            return;
+
+        SelectedCustomerStatusValue = SelectedCustomer.IsActive ? "false" : "true";
+        await UpdateCustomerAsync();
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private static string GetCompactCode(CustomerListItemModel customer)
+        => customer.Id.ToString()[..8].ToUpperInvariant();
+
+    private static string GetInvoiceSummary(CustomerListItemModel customer)
+        => customer.InvoiceCount == 0 ? "No invoices yet" : $"{customer.InvoiceCount} invoice(s)";
+
+    private static string FormatLastInvoice(DateTime? lastInvoiceAt)
+        => lastInvoiceAt is null ? "-" : lastInvoiceAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+
+    private static UpdateCustomerRequestModel MapUpdateModel(CustomerListItemModel customer)
+        => new()
+        {
+            FullName = customer.FullName,
+            Phone = customer.Phone,
+            Email = customer.Email,
+            Notes = customer.Notes,
+            IsActive = customer.IsActive
+        };
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+    }
+}

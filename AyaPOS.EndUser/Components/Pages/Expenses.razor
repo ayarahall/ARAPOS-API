@@ -1,0 +1,554 @@
+@page "/expenses"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Forms
+@using Ayapos.EndUser.Models.Expenses
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Expenses
+@using Ayapos.EndUser.Services.Ui
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject ExpensesApiClient ExpensesApiClient
+@inject UiLanguageState UiLanguage
+
+<PageTitle>@T("Expenses", "المصروفات")</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="@T("Expenses", "المصروفات")"
+                   Description="@T("Track branch operating expenses inside the end-user workspace, separate from owner and tenant administration.", "تابع مصروفات تشغيل الفرع داخل مساحة المستخدم، بشكل منفصل عن إدارة المالك والتنت.")"
+                   SessionState="@SessionState"
+                   OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="expenses" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@T("Branch Costs", "تكاليف الفرع")</span>
+                <h2>@ExpensesTitle</h2>
+            </div>
+            <p>@ExpensesDescription</p>
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">@T("Expense Layer", "مستوى المصروف")</span>
+            <strong class="metric-value">@T("Branch Only", "الفرع فقط")</strong>
+            <span class="metric-note">@T("Each branch should track its own daily expenses inside the operations workspace.", "كل فرع يجب أن يتتبع مصروفاته اليومية داخل مساحة العمليات.")</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">@T("Use Case", "حالة الاستخدام")</span>
+            <strong class="metric-value">@T("Daily Operations", "العمليات اليومية")</strong>
+            <span class="metric-note">@T("Utilities, supplies, petty cash, and service-related cost tracking belong here.", "هنا يتم حفظ مصاريف التشغيل والمواد والكاش البسيط والتكاليف المرتبطة بالخدمات.")</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">@T("Current Branch", "الفرع الحالي")</span>
+            <strong class="metric-value">@BranchLabel</strong>
+            <span class="metric-note">@T("The branch stored in the current signed-in session.", "الفرع المحفوظ في جلسة تسجيل الدخول الحالية.")</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">@T("Results", "النتائج")</span>
+            <strong class="metric-value">@TotalCount</strong>
+            <span class="metric-note">@T("Expenses currently loaded for this branch workspace.", "المصروفات المحمّلة حالياً لمساحة عمل هذا الفرع.")</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@T("Create Expense", "إنشاء مصروف")</span>
+                <h2>@T("Add a branch operating cost", "إضافة تكلفة تشغيل للفرع")</h2>
+            </div>
+            <p>@T("This area is for branch operating costs only, not tenant license billing or owner-level administration.", "هذه المنطقة مخصصة لمصروفات تشغيل الفرع فقط، وليست لفوترة الرخص أو إدارة المالك.")</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="submit-button" @onclick="OpenCreateExpenseModal" disabled="@IsBusy">@T("Create Expense", "إنشاء مصروف")</button>
+            <button class="ghost-button" @onclick="OpenAnalyzeExpenseModalAsync" disabled="@IsBusy">@T("Analyze Receipt", "تحليل فاتورة")</button>
+            <button class="ghost-button" @onclick="RefreshAsync" disabled="@IsBusy">@T("Refresh Expenses", "تحديث المصروفات")</button>
+        </div>
+
+        <div class="placeholder-panel" style="margin-top:16px; border:1px solid @(ExpenseAiStatus.Enabled ? "rgba(43, 128, 115, 0.18)" : "rgba(214, 126, 24, 0.18)"); background:@(ExpenseAiStatus.Enabled ? "rgba(82, 150, 139, 0.08)" : "rgba(245, 166, 35, 0.08)");">
+            <strong>@ExpenseAiStatusLabel</strong>
+            <p style="margin:8px 0 0 0;">@ExpenseAiStatusNote</p>
+        </div>
+    </section>
+
+    <section class="products-table-wrap">
+        @if (ExpenseItems.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">@T("No expenses loaded for this branch yet.", "لا توجد مصروفات محمّلة لهذا الفرع حتى الآن.")</div>
+        }
+        else
+        {
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>@T("Title", "العنوان")</th>
+                        <th>@T("Category", "الفئة")</th>
+                        <th>@T("Amount", "المبلغ")</th>
+                        <th>@T("Date", "التاريخ")</th>
+                        <th>@T("Status", "الحالة")</th>
+                        <th>@T("Notes", "الملاحظات")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in ExpenseItems)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@item.Title</div>
+                                <div class="table-secondary-cell">@item.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                            </td>
+                            <td>@item.Category</td>
+                            <td>@FormatMoney(item.Amount, item.CurrencyCode)</td>
+                            <td>@item.ExpenseDate.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                            <td>
+                                <select class="form-input compact-input" value="@item.Status" @onchange="args => UpdateStatusAsync(item, args.Value?.ToString())">
+                                    @foreach (var status in ExpenseStatuses)
+                                    {
+                                        <option value="@status">@MapStatusLabel(status)</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(item.Notes) ? "-" : item.Notes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <ActionModal Visible="@ShowCreateExpenseModal"
+                 Eyebrow="@T("Create Expense", "إنشاء مصروف")"
+                 Title="@T("Add a branch operating cost", "إضافة تكلفة تشغيل للفرع")"
+                 Description="@T("Save expenses from inside the branch workspace without leaving the expense history on screen.", "احفظ المصروفات من داخل مساحة عمل الفرع بدون مغادرة شاشة السجل.")"
+                 OnClose="CloseCreateExpenseModal">
+        <div class="toolbar-grid invoice-list-toolbar-grid">
+            <input class="form-input" @bind="CreateModel.Title" placeholder="@T("Expense title", "عنوان المصروف")" />
+            <input class="form-input" @bind="CreateModel.Category" placeholder="@T("Category", "الفئة")" />
+            <input class="form-input" type="number" step="0.01" min="0.01" @bind="CreateModel.Amount" />
+            <input class="form-input" type="date" value="@ExpenseDateInput" @onchange="OnExpenseDateChanged" />
+            <input class="form-input" @bind="CreateModel.Notes" placeholder="@T("Optional notes", "ملاحظات اختيارية")" />
+        </div>
+
+        <div class="invoice-actions">
+            <button class="submit-button" @onclick="CreateExpenseAsync" disabled="@IsBusy">@T("Create Expense", "إنشاء مصروف")</button>
+            <button class="ghost-button" @onclick="CloseCreateExpenseModal" disabled="@IsBusy">@T("Cancel", "إلغاء")</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@ShowAnalyzeExpenseModal"
+                 Eyebrow="@T("Analyze Receipt", "تحليل فاتورة")"
+                 Title="@T("Upload an expense receipt", "رفع فاتورة مصروف")"
+                 Description="@T("Upload a JPG, PNG, or WEBP image so AyaPOS can suggest the expense fields for you.", "ارفع صورة JPG أو PNG أو WEBP حتى يقترح AyaPOS بيانات المصروف تلقائياً.")"
+                 OnClose="CloseAnalyzeExpenseModal">
+        @if (!ExpenseAiStatus.Enabled)
+        {
+            <div class="placeholder-panel accent">
+                <strong>@T("AI analysis is currently unavailable.", "التحليل الذكي غير مفعّل حالياً.")</strong>
+                <p>@(string.IsNullOrWhiteSpace(ExpenseAiStatus.Message)
+                        ? T("You can still continue by selecting the receipt image, then opening the manual expense form.", "ما زال بإمكانك المتابعة باختيار صورة الفاتورة ثم فتح نموذج المصروف اليدوي.")
+                        : ExpenseAiStatus.Message)</p>
+            </div>
+        }
+
+        <div class="placeholder-panel" style="margin-top:18px; border:1px solid @(ExpenseAiStatus.Enabled ? "rgba(43, 128, 115, 0.22)" : "rgba(214, 126, 24, 0.22)"); background:@(ExpenseAiStatus.Enabled ? "rgba(82, 150, 139, 0.10)" : "rgba(245, 166, 35, 0.10)");">
+            <strong>@(ExpenseAiStatus.Enabled ? T("AI analysis is ready.", "التحليل الذكي جاهز.") : T("Manual expense mode is active.", "وضع المصروف اليدوي مفعّل."))</strong>
+            <p style="margin:8px 0 0 0;">
+                @(ExpenseAiStatus.Enabled
+                    ? T("Upload the receipt image and AyaPOS will try to extract the expense details automatically.", "ارفعي صورة الفاتورة وسيحاول AyaPOS استخراج بيانات المصروف تلقائياً.")
+                    : T("You can still upload the receipt image and continue directly to the manual expense form without waiting.", "ما زال بإمكانك رفع صورة الفاتورة والمتابعة مباشرة إلى نموذج المصروف اليدوي بدون انتظار."))
+            </p>
+        </div>
+
+        <div class="field">
+            <label>@T("Receipt Image", "صورة الفاتورة")</label>
+            <InputFile OnChange="OnReceiptFileSelected" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
+            @if (!string.IsNullOrWhiteSpace(SelectedReceiptFileName))
+            {
+                <div class="table-secondary-cell" style="margin-top:8px;">@SelectedReceiptFileName</div>
+            }
+        </div>
+
+        @if (AnalyzedExpense is not null)
+        {
+            <div class="placeholder-panel" style="margin-top:18px;">
+                <strong>@AnalyzedExpense.Title</strong><br />
+                @FormatMoney(AnalyzedExpense.Amount, AnalyzedExpense.CurrencyCode) · @AnalyzedExpense.ExpenseDate.ToString("yyyy-MM-dd")<br />
+                @AnalyzedExpense.Category
+            </div>
+        }
+
+        <div class="invoice-actions">
+            @if (ExpenseAiStatus.Enabled)
+            {
+                <button class="submit-button" @onclick="AnalyzeReceiptAsync" disabled="@IsBusy || SelectedReceiptFile is null">@T("Run AI Analysis", "تشغيل التحليل الذكي")</button>
+                <button class="ghost-button" @onclick="ContinueReceiptManualAsync" disabled="@IsBusy || SelectedReceiptFile is null">@T("Continue Manually", "متابعة يدوياً")</button>
+            }
+            else
+            {
+                <button class="submit-button" @onclick="ContinueReceiptManualAsync" disabled="@IsBusy || SelectedReceiptFile is null">@T("Continue Manually", "متابعة يدوياً")</button>
+                <button class="ghost-button" @onclick="AnalyzeReceiptAsync" disabled="@IsBusy || SelectedReceiptFile is null">@T("Check AI Setup", "التحقق من إعداد الذكاء الاصطناعي")</button>
+            }
+            <button class="ghost-button" @onclick="ApplyAnalyzedExpenseAsync" disabled="@IsBusy || AnalyzedExpense is null">@T("Use In Expense Form", "استخدام النتيجة في النموذج")</button>
+            <button class="ghost-button" @onclick="CloseAnalyzeExpenseModal" disabled="@IsBusy">@T("Cancel", "إلغاء")</button>
+        </div>
+    </ActionModal>
+</div>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool ShowCreateExpenseModal { get; set; }
+    private bool ShowAnalyzeExpenseModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private int TotalCount { get; set; }
+    private List<BranchExpenseListItemModel> ExpenseItems { get; set; } = [];
+    private CreateBranchExpenseRequestModel CreateModel { get; set; } = new();
+    private ExpenseAiStatusModel ExpenseAiStatus { get; set; } = new();
+    private IBrowserFile? SelectedReceiptFile { get; set; }
+    private string SelectedReceiptFileName { get; set; } = string.Empty;
+    private AnalyzeExpenseReceiptResultModel? AnalyzedExpense { get; set; }
+    private static IReadOnlyList<string> ExpenseStatuses => ["draft", "submitted", "approved", "paid", "cancelled"];
+
+    private string BranchLabel => string.IsNullOrWhiteSpace(SessionState.BranchName) ? T("Current Branch", "الفرع الحالي") : SessionState.BranchName;
+    private string ExpensesTitle => string.IsNullOrWhiteSpace(SessionState.BranchName)
+        ? T("Branch expense workspace", "مساحة عمل مصروفات الفرع")
+        : UiLanguage.IsArabic
+            ? $"مساحة مصروفات {SessionState.BranchName}"
+            : $"{SessionState.BranchName} expense workspace";
+    private string ExpensesDescription => T("Use this branch workspace for day-to-day operating costs, not tenant license billing.", "استخدم هذه المساحة لمصروفات التشغيل اليومية، وليس لفوترة رخصة التنت.");
+    private string ExpenseAiStatusLabel => ExpenseAiStatus.Enabled
+        ? T("AI receipt analysis is ready.", "تحليل فواتير المصروف بالذكاء الاصطناعي جاهز.")
+        : T("Manual receipt entry is active.", "إدخال الفاتورة اليدوي هو المسار النشط حالياً.");
+    private string ExpenseAiStatusNote => ExpenseAiStatus.Enabled
+        ? T("You can upload a receipt image and let AyaPOS suggest the expense details automatically before saving.", "يمكنك رفع صورة الفاتورة وترك AyaPOS يقترح بيانات المصروف تلقائياً قبل الحفظ.")
+        : string.IsNullOrWhiteSpace(ExpenseAiStatus.Message)
+            ? T("AI setup is incomplete right now, so AyaPOS will keep the expense flow moving through the manual form without waiting.", "إعداد الذكاء الاصطناعي غير مكتمل حالياً، لذلك سيكمل AyaPOS مسار المصروف عبر النموذج اليدوي بدون انتظار.")
+            : ExpenseAiStatus.Message;
+    private string ExpenseDateInput
+    {
+        get => CreateModel.ExpenseDate.ToString("yyyy-MM-dd");
+        set
+        {
+            if (DateTime.TryParse(value, out var parsed))
+                CreateModel.ExpenseDate = parsed;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+
+        try
+        {
+            await SessionState.InitializeAsync();
+            await UiLanguage.InitializeAsync();
+
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            if (!SessionState.CanAccessExpenses)
+            {
+                NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+                return;
+            }
+
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        ErrorMessage = string.Empty;
+        var result = await ExpensesApiClient.GetExpensesAsync(SessionState, null, null, 1, 50);
+        ExpenseAiStatus = await ExpensesApiClient.GetAiStatusAsync(SessionState);
+        ExpenseItems = result.Items.ToList();
+        TotalCount = result.Total;
+    }
+
+    private async Task RefreshAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await LoadDataAsync();
+            FlashMessage = T("Expenses refreshed successfully.", "تم تحديث المصروفات بنجاح.");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OpenCreateExpenseModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowCreateExpenseModal = true;
+    }
+
+    private async Task OpenAnalyzeExpenseModalAsync()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        SelectedReceiptFile = null;
+        SelectedReceiptFileName = string.Empty;
+        AnalyzedExpense = null;
+
+        try
+        {
+            ExpenseAiStatus = await ExpensesApiClient.GetAiStatusAsync(SessionState);
+        }
+        catch
+        {
+            ExpenseAiStatus = new ExpenseAiStatusModel
+            {
+                Enabled = false,
+                Message = T("AI receipt analysis is unavailable right now. You can continue manually.", "تحليل الفاتورة بالذكاء الاصطناعي غير متاح حالياً. يمكنك المتابعة يدوياً.")
+            };
+        }
+
+        ShowAnalyzeExpenseModal = true;
+    }
+
+    private Task CloseCreateExpenseModal()
+    {
+        ShowCreateExpenseModal = false;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseAnalyzeExpenseModal()
+    {
+        ShowAnalyzeExpenseModal = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task CreateExpenseAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await ExpensesApiClient.CreateExpenseAsync(SessionState, CreateModel);
+            CreateModel = new CreateBranchExpenseRequestModel();
+            ShowCreateExpenseModal = false;
+            FlashMessage = T("Expense created successfully.", "تم إنشاء المصروف بنجاح.");
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task UpdateStatusAsync(BranchExpenseListItemModel item, string? newStatus)
+    {
+        if (string.IsNullOrWhiteSpace(newStatus))
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await ExpensesApiClient.UpdateStatusAsync(SessionState, item.Id, new UpdateBranchExpenseStatusRequestModel
+            {
+                Status = newStatus
+            });
+            FlashMessage = T("Expense status updated successfully.", "تم تحديث حالة المصروف بنجاح.");
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OnReceiptFileSelected(InputFileChangeEventArgs args)
+    {
+        SelectedReceiptFile = args.File;
+        SelectedReceiptFileName = args.File.Name;
+        AnalyzedExpense = null;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        if (!ExpenseAiStatus.Enabled)
+        {
+            AttachSelectedReceiptToCreateModel();
+            ShowAnalyzeExpenseModal = false;
+            ShowCreateExpenseModal = true;
+            FlashMessage = T("AI analysis is not available yet, so AyaPOS opened the manual expense form for you immediately.", "التحليل الذكي غير متاح حالياً، لذلك فتح AyaPOS نموذج المصروف اليدوي لك مباشرة.");
+        }
+    }
+
+    private async Task AnalyzeReceiptAsync()
+    {
+        if (!ExpenseAiStatus.Enabled)
+        {
+            ErrorMessage = string.IsNullOrWhiteSpace(ExpenseAiStatus.Message)
+                ? T("AI receipt analysis is not configured yet.", "تحليل الفاتورة بالذكاء الاصطناعي غير مفعّل حالياً.")
+                : ExpenseAiStatus.Message;
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        if (SelectedReceiptFile is null)
+        {
+            ErrorMessage = T("Please choose a receipt image first.", "يرجى اختيار صورة الفاتورة أولاً.");
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        if (SelectedReceiptFile.Size <= 0)
+        {
+            ErrorMessage = T("The selected receipt file is empty.", "الملف المحدد فارغ.");
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        if (SelectedReceiptFile.Size > 10_000_000)
+        {
+            ErrorMessage = T("The receipt image is too large. Please keep it under 10 MB.", "صورة الفاتورة كبيرة جداً. يرجى أن تكون أقل من 10 ميغابايت.");
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = T("Analyzing receipt, please wait...", "جارٍ تحليل الفاتورة، يرجى الانتظار...");
+
+        try
+        {
+            AnalyzedExpense = await ExpensesApiClient.AnalyzeReceiptAsync(SessionState, SelectedReceiptFile);
+            FlashMessage = T("Receipt analyzed successfully.", "تم تحليل الفاتورة بنجاح.");
+        }
+        catch (Exception ex)
+        {
+            FlashMessage = string.Empty;
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private Task ContinueReceiptManualAsync()
+    {
+        if (SelectedReceiptFile is null)
+            return Task.CompletedTask;
+
+        AttachSelectedReceiptToCreateModel();
+        IsBusy = false;
+        ShowAnalyzeExpenseModal = false;
+        ShowCreateExpenseModal = true;
+        FlashMessage = T("The receipt was attached as a manual reference. You can complete the expense form now.", "تم اعتماد الفاتورة كمرجع يدوي. يمكنك الآن إكمال نموذج المصروف.");
+        ErrorMessage = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task ApplyAnalyzedExpenseAsync()
+    {
+        if (AnalyzedExpense is null)
+            return Task.CompletedTask;
+
+        CreateModel.Title = AnalyzedExpense.Title;
+        CreateModel.Category = string.IsNullOrWhiteSpace(AnalyzedExpense.Category) ? "Other" : AnalyzedExpense.Category;
+        CreateModel.Amount = AnalyzedExpense.Amount;
+        CreateModel.CurrencyCode = string.IsNullOrWhiteSpace(AnalyzedExpense.CurrencyCode) ? "AED" : AnalyzedExpense.CurrencyCode;
+        CreateModel.ExpenseDate = AnalyzedExpense.ExpenseDate == default ? DateTime.Today : AnalyzedExpense.ExpenseDate;
+        CreateModel.Notes = string.Join(" | ", new[]
+        {
+            string.IsNullOrWhiteSpace(AnalyzedExpense.VendorName) ? null : $"{T("Vendor", "المورد")}: {AnalyzedExpense.VendorName}",
+            string.IsNullOrWhiteSpace(AnalyzedExpense.Notes) ? null : AnalyzedExpense.Notes,
+            string.IsNullOrWhiteSpace(AnalyzedExpense.RawSummary) ? null : $"{T("AI Summary", "ملخص الذكاء الاصطناعي")}: {AnalyzedExpense.RawSummary}"
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        ShowAnalyzeExpenseModal = false;
+        ShowCreateExpenseModal = true;
+        FlashMessage = T("AI suggestions were loaded into the expense form.", "تم تحميل اقتراحات الذكاء الاصطناعي في نموذج المصروف.");
+        ErrorMessage = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private void AttachSelectedReceiptToCreateModel()
+    {
+        if (SelectedReceiptFile is null)
+            return;
+
+        var receiptLabel = T("Receipt file", "ملف الفاتورة");
+        var receiptPrefix = $"{receiptLabel}:";
+        var existingNotes = string.IsNullOrWhiteSpace(CreateModel.Notes)
+            ? []
+            : CreateModel.Notes
+                .Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(note => !note.StartsWith(receiptPrefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+        existingNotes.Add($"{receiptLabel}: {SelectedReceiptFile.Name}");
+        CreateModel.Notes = string.Join(" | ", existingNotes);
+    }
+
+    private void OnExpenseDateChanged(ChangeEventArgs args)
+        => ExpenseDateInput = args.Value?.ToString() ?? ExpenseDateInput;
+
+    private string T(string english, string arabic) => UiLanguage.Text(english, arabic);
+
+    private string MapStatusLabel(string status)
+        => status switch
+        {
+            "draft" => T("Draft", "مسودة"),
+            "submitted" => T("Submitted", "مرسل"),
+            "approved" => T("Approved", "معتمد"),
+            "paid" => T("Paid", "مدفوع"),
+            "cancelled" => T("Cancelled", "ملغي"),
+            _ => status
+        };
+
+    private static string FormatMoney(decimal amount, string currencyCode)
+        => $"{amount:0.##} {currencyCode}";
+}

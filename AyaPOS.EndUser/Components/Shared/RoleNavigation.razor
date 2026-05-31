@@ -1,0 +1,181 @@
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Ui
+@inject SessionState SessionState
+@inject UiLanguageState UiLanguage
+@inject NavigationManager NavigationManager
+
+<header class="role-nav-topbar @(SessionState.IsAuthenticated ? "authenticated" : "guest") @(IsMenuOpen ? "open" : "collapsed") @(UiLanguage.IsArabic ? "rtl" : "ltr")">
+    @if (SessionState.IsAuthenticated)
+    {
+        <button type="button"
+                class="role-nav-trigger"
+                @onclick="ToggleMenu"
+                aria-label="Open navigation menu"
+                aria-expanded="@IsMenuOpen">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    }
+
+    <div class="role-nav-topbar-user">
+        @if (SessionState.IsAuthenticated)
+        {
+            <span class="role-nav-topbar-avatar">@GetInitials()</span>
+            <span>@GetGreeting()</span>
+        }
+    </div>
+
+    <div class="role-nav-topbar-actions">
+        @if (SessionState.IsAuthenticated)
+        {
+            <button type="button" class="role-nav-text-button" @onclick="SignOutAsync">@UiLanguage.Text("Sign out", "تسجيل الخروج")</button>
+        }
+        <div class="role-nav-language-group" aria-label="Language">
+            <button type="button" class="@GetLanguageClass("ar")" @onclick='() => SetLanguageAsync("ar")'>AR</button>
+            <button type="button" class="@GetLanguageClass("en")" @onclick='() => SetLanguageAsync("en")'>EN</button>
+        </div>
+    </div>
+</header>
+
+@if (SessionState.IsAuthenticated)
+{
+    <aside class="role-nav-shell @(IsMenuOpen ? "open" : "collapsed") authenticated @(UiLanguage.IsArabic ? "rtl" : "ltr")">
+        <div class="role-nav-header">
+            <div class="role-nav-brand-block">
+                <a class="role-nav-brand" href="@GetHomeHref()">
+                    <img class="role-nav-logo" src="/ayapos-logo.svg" alt="AyaPOS" />
+                    <span class="role-nav-brand-text">AyaPOS</span>
+                </a>
+                <div class="role-nav-subtitle">@GetSubtitle()</div>
+            </div>
+        </div>
+
+        <nav class="role-nav-links">
+            <NavLink class="role-nav-link" href="@GetHomeHref()" Match="NavLinkMatch.Prefix">@UiLanguage.Text("Home", "الرئيسية")</NavLink>
+
+            @if (SessionState.IsTenantAdmin)
+            {
+                <NavLink class="role-nav-link" href="tenant-admin">@UiLanguage.Text("Tenant Admin", "إدارة التانت")</NavLink>
+            }
+            else
+            {
+                <div class="role-nav-section-title">@UiLanguage.Text("Daily work", "العمل اليومي")</div>
+                <NavLink class="role-nav-link" href="workspace">@UiLanguage.Text("Dashboard", "لوحة التحكم")</NavLink>
+
+                @if (SessionState.CanAccessPos)
+                {
+                    <NavLink class="role-nav-link" href="pos">@UiLanguage.Text("Point of Sale", "نقطة البيع")</NavLink>
+                }
+
+                @if (SessionState.CanAccessInvoices)
+                {
+                    <NavLink class="role-nav-link" href="invoices/create">@UiLanguage.Text("Create Invoice", "فاتورة جديدة")</NavLink>
+                    <NavLink class="role-nav-link" href="invoices">@UiLanguage.Text("Invoices", "الفواتير")</NavLink>
+                }
+
+                @if (SessionState.CanAccessCashier)
+                {
+                    <NavLink class="role-nav-link" href="cashier">@UiLanguage.Text("Cashier", "الكاشير")</NavLink>
+                }
+
+                <div class="role-nav-section-title">@UiLanguage.Text("Records", "السجلات")</div>
+
+                @if (SessionState.CanAccessCatalog)
+                {
+                    <NavLink class="role-nav-link" href="products">@UiLanguage.Text("Products", "المنتجات")</NavLink>
+                }
+
+                @if (SessionState.CanAccessServices)
+                {
+                    <NavLink class="role-nav-link" href="services">@UiLanguage.Text("Services", "الخدمات")</NavLink>
+                }
+
+                @if (SessionState.CanAccessCustomers)
+                {
+                    <NavLink class="role-nav-link" href="customers">@UiLanguage.Text("Customers", "العملاء")</NavLink>
+                }
+
+                @if (SessionState.CanAccessAppointments)
+                {
+                    <NavLink class="role-nav-link" href="appointments">@UiLanguage.Text("Appointments", "المواعيد")</NavLink>
+                }
+
+                <div class="role-nav-section-title">@UiLanguage.Text("Administration", "الإدارة")</div>
+
+                @if (SessionState.CanAccessEmployees)
+                {
+                    <NavLink class="role-nav-link" href="employees">@UiLanguage.Text("Employees", "الموظفون")</NavLink>
+                }
+
+                @if (SessionState.CanAccessExpenses)
+                {
+                    <NavLink class="role-nav-link" href="expenses">@UiLanguage.Text("Expenses", "المصروفات")</NavLink>
+                }
+            }
+        </nav>
+    </aside>
+}
+
+@code {
+    private bool _sessionChecked;
+    private bool IsMenuOpen { get; set; } = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+        await SessionState.InitializeAsync();
+        await UiLanguage.InitializeAsync();
+        StateHasChanged();
+    }
+
+    private string GetHomeHref()
+        => SessionState.IsTenantAdmin
+            ? "tenant-admin"
+            : SessionState.IsAuthenticated
+                ? "workspace"
+                : "";
+
+    private string GetSubtitle()
+        => SessionState.IsTenantAdmin
+            ? UiLanguage.Text("Tenant administration", "إدارة التانت")
+            : SessionState.IsAuthenticated
+                ? string.IsNullOrWhiteSpace(SessionState.Role)
+                    ? UiLanguage.Text("Branch workspace", "مساحة عمل الفرع")
+                    : SessionState.Role.Replace("_", " ")
+                : UiLanguage.Text("Sign in to continue", "سجل الدخول للمتابعة");
+
+    private void ToggleMenu() => IsMenuOpen = !IsMenuOpen;
+
+    private async Task SetLanguageAsync(string language)
+    {
+        await UiLanguage.SetLanguageAsync(language);
+        StateHasChanged();
+    }
+
+    private string GetLanguageClass(string language)
+        => string.Equals(UiLanguage.Current, language, StringComparison.OrdinalIgnoreCase)
+            ? "role-nav-lang active"
+            : "role-nav-lang";
+
+    private string GetGreeting()
+    {
+        var name = string.IsNullOrWhiteSpace(SessionState.Username) ? "AyaPOS" : SessionState.Username;
+        return UiLanguage.Text($"Welcome, {name}", $"مرحباً، {name}");
+    }
+
+    private string GetInitials()
+    {
+        var source = string.IsNullOrWhiteSpace(SessionState.Username) ? "AY" : SessionState.Username.Trim();
+        return source.Length >= 2 ? source[..2].ToUpperInvariant() : source.ToUpperInvariant();
+    }
+
+    private async Task SignOutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+}

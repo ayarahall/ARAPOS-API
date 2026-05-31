@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UseAppHost>false</UseAppHost>
+    <AssemblyName>AYAPOS.EndUser</AssemblyName>
+    <RootNamespace>Ayapos.EndUser</RootNamespace>
+    <Product>AYAPOS.EndUser</Product>
+    <AssemblyTitle>AYAPOS.EndUser</AssemblyTitle>
+  </PropertyGroup>
+
+</Project>

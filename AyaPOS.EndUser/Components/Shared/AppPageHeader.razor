@@ -1,0 +1,56 @@
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Ui
+@inject UiLanguageState UiLanguage
+
+<header class="products-header page-header-compact">
+    <div>
+        <div class="page-hero-chip-row">
+            <img class="page-hero-logo" src="/ayapos-logo.svg" alt="AyaPOS" />
+            <span class="eyebrow">@GetRoleDisplay()</span>
+            @if (!string.IsNullOrWhiteSpace(GetBranchDisplay()))
+            {
+                <span class="eyebrow muted-chip">@GetBranchDisplay()</span>
+            }
+        </div>
+        <h1>@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <p>@Description</p>
+        }
+    </div>
+
+    <div class="page-header-actions">
+        <UserAccessCard ScopeLabel=""
+                        TenantLabel="@SessionState.TenantSlug"
+                        BranchLabel="@GetBranchDisplay()"
+                        UserName="@SessionState.Username"
+                        RoleLabel="@GetRoleDisplay()"
+                        LogoutText="@UiLanguage.Text("Sign Out", "تسجيل الخروج")"
+                        Compact="true"
+                        OnLogout="OnLogout" />
+    </div>
+</header>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Description { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public SessionState SessionState { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback OnLogout { get; set; }
+
+    private string GetBranchDisplay()
+        => !string.IsNullOrWhiteSpace(SessionState.BranchName)
+            ? SessionState.BranchName
+            : SessionState.BranchId;
+
+    private string GetRoleDisplay()
+        => string.IsNullOrWhiteSpace(SessionState.Role)
+            ? UiLanguage.Text("Branch User", "مستخدم فرع")
+            : SessionState.Role.Replace("_", " ");
+}

@@ -1,0 +1,837 @@
+@page "/employees"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Staff
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.TenantAdmin
+@using Ayapos.EndUser.Services.Ui
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject TenantAdminApiClient TenantAdminApiClient
+@inject UiLanguageState UiLanguage
+
+<PageTitle>@T("Employees", "الموظفون")</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="@T("Employees", "الموظفون")" Description="@T("Manage branch employees, attendance, shifts, leave, and staff files without forcing every employee to become a system user.", "إدارة موظفي الفرع والحضور والانصراف والشفتات والإجازات وملفات الموظفين بدون الحاجة لتحويل كل موظف إلى مستخدم نظام.")" SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="employees" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">@T("Employees", "الموظفون")</span>
+            <strong class="metric-value">@EmployeeItems.Count</strong>
+            <span class="metric-note">@T("All staff files loaded for the current branch.", "كل ملفات الموظفين المحمّلة للفرع الحالي.")</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">@T("Present Today", "الحاضرون اليوم")</span>
+            <strong class="metric-value">@AttendanceSummary.PresentCount</strong>
+            <span class="metric-note">@T("Employees already checked in or marked present today.", "الموظفون الذين تم تسجيل حضورهم أو دخولهم اليوم.")</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">@T("Late Today", "المتأخرون اليوم")</span>
+            <strong class="metric-value">@AttendanceSummary.LateCount</strong>
+            <span class="metric-note">@T("Late arrivals detected against shift and grace rules.", "حالات التأخير المكتشفة حسب الشفت ومدة السماح.")</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">@T("Deductions", "الخصومات")</span>
+            <strong class="metric-value">@FormatMoney(AttendanceSummary.TotalDeductions)</strong>
+            <span class="metric-note">@T("Late-minute and absent-day deductions calculated for today.", "خصومات دقائق التأخير وغياب اليوم المحسوبة لليوم الحالي.")</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@T("Employee File", "ملف الموظف")</span>
+                <h2>@T("Create a staff member for this branch", "إنشاء موظف لهذا الفرع")</h2>
+            </div>
+            <p>@T("Normal employees can stay as staff-only records, while cashier, HR, or branch manager accounts can still be linked to system users when needed.", "يمكن إبقاء الموظفين العاديين كملفات موظفين فقط، بينما يمكن ربط الكاشير أو الموارد البشرية أو مدير الفرع بمستخدمين داخل النظام عند الحاجة.")</p>
+        </div>
+
+        <div class="invoice-form-grid" style="margin-top:18px;">
+            <div class="field">
+                <label>@T("Full Name", "الاسم الكامل")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.FullName" />
+            </div>
+            <div class="field">
+                <label>@T("Phone", "رقم الهاتف")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.Phone" />
+            </div>
+            <div class="field">
+                <label>@T("Job Title", "المسمى الوظيفي")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.JobTitle" placeholder="@T("Receptionist / Therapist / Cleaner", "استقبال / أخصائي / عامل نظافة")" />
+            </div>
+            <div class="field">
+                <label>@T("Employee Code", "كود الموظف")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.EmployeeCode" />
+            </div>
+            <div class="field">
+                <label>@T("Salary Type", "نوع الراتب")</label>
+                <select class="form-input" @bind="CreateEmployeeModel.SalaryType">
+                    <option value="monthly">@T("Monthly", "شهري")</option>
+                    <option value="daily">@T("Daily", "يومي")</option>
+                    <option value="hourly">@T("Hourly", "بالساعة")</option>
+                    <option value="commission">@T("Commission", "عمولة")</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>@T("Base Salary", "الراتب الأساسي")</label>
+                <input class="form-input" type="number" step="0.01" @bind="CreateEmployeeModel.BaseSalary" />
+            </div>
+            <div class="field">
+                <label>@T("Late Deduction / Minute", "خصم التأخير / دقيقة")</label>
+                <input class="form-input" type="number" step="0.01" @bind="CreateEmployeeModel.DeductionPerLateMinute" />
+            </div>
+            <div class="field">
+                <label>@T("Absent Deduction / Day", "خصم الغياب / يوم")</label>
+                <input class="form-input" type="number" step="0.01" @bind="CreateEmployeeModel.DeductionPerAbsentDay" />
+            </div>
+            <div class="field">
+                <label>@T("Weekly Off Days", "أيام الإجازة الأسبوعية")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.WeeklyOffDays" placeholder="@T("Friday,Sunday", "الجمعة,الأحد")" />
+            </div>
+            <div class="field">
+                <label>@T("Hire Date", "تاريخ التعيين")</label>
+                <input class="form-input" type="date" @bind="CreateEmployeeHireDate" />
+            </div>
+            <div class="field">
+                <label>@T("Photo URL", "رابط صورة الموظف")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.PhotoUrl" placeholder="https://..." />
+            </div>
+            <div class="field">
+                <label>@T("Notes", "ملاحظات")</label>
+                <input class="form-input" @bind="CreateEmployeeModel.Notes" />
+            </div>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <label class="status-pill active" style="gap:8px;">
+                <input type="checkbox" @bind="CreateEmployeeModel.TrackAttendance" />
+                @T("Track attendance", "تتبع الحضور")
+            </label>
+            <label class="status-pill active" style="gap:8px;">
+                <input type="checkbox" @bind="CreateEmployeeModel.IsBookableForAppointments" />
+                @T("Bookable in appointments", "متاح للحجز في المواعيد")
+            </label>
+            <label class="status-pill active" style="gap:8px;">
+                <input type="checkbox" @bind="CreateEmployeeModel.IsActive" />
+                @T("Active", "نشط")
+            </label>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button type="button" class="submit-button" @onclick="CreateEmployeeAsync" disabled="@IsBusy">@T("Create Employee", "إنشاء موظف")</button>
+            <button type="button" class="ghost-button" @onclick="RefreshAsync" disabled="@IsBusy">@T("Refresh Employees", "تحديث الموظفين")</button>
+        </div>
+    </section>
+
+    <section class="products-table-wrap">
+        <table class="products-table">
+            <thead>
+                <tr>
+                    <th>@T("Employee", "الموظف")</th>
+                    <th>@T("Job", "الوظيفة")</th>
+                    <th>@T("System Access", "وصول النظام")</th>
+                    <th>@T("Attendance", "الحضور")</th>
+                    <th>@T("Salary", "الراتب")</th>
+                    <th>@T("Appointments", "المواعيد")</th>
+                    <th>@T("Action", "الإجراء")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (EmployeeItems.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7">@T("No employees loaded for this branch yet.", "لا يوجد موظفون محمّلون لهذا الفرع حتى الآن.")</td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var employee in EmployeeItems)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@employee.FullName</div>
+                                <div class="table-secondary-cell">@(string.IsNullOrWhiteSpace(employee.Phone) ? T("No phone", "لا يوجد هاتف") : employee.Phone)</div>
+                            </td>
+                            <td>
+                                <div class="table-primary-cell">@(string.IsNullOrWhiteSpace(employee.JobTitle) ? T("No title", "لا يوجد مسمى") : employee.JobTitle)</div>
+                                <div class="table-secondary-cell">@(string.IsNullOrWhiteSpace(employee.EmployeeCode) ? T("No code", "لا يوجد كود") : employee.EmployeeCode)</div>
+                            </td>
+                            <td>
+                                <div class="table-primary-cell">@(employee.HasSystemAccess ? employee.LinkedUsername ?? T("Linked user", "مستخدم مرتبط") : T("Staff only", "موظف فقط"))</div>
+                                <div class="table-secondary-cell">@(employee.HasSystemAccess ? employee.LinkedUserRole ?? T("System user", "مستخدم نظام") : T("No system access", "بدون وصول للنظام"))</div>
+                            </td>
+                            <td>
+                                <div class="table-primary-cell">@MapAttendanceStatus(employee.TodayAttendanceStatus)</div>
+                                <div class="table-secondary-cell">@FormatTodayAttendance(employee)</div>
+                            </td>
+                            <td>
+                                <div class="table-primary-cell">@FormatMoney(employee.BaseSalary)</div>
+                                <div class="table-secondary-cell">@T("Late", "تأخير"): @FormatMoney(employee.DeductionPerLateMinute) | @T("Absent", "غياب"): @FormatMoney(employee.DeductionPerAbsentDay)</div>
+                            </td>
+                            <td>@(employee.IsBookableForAppointments ? T("Available", "متاح") : T("Not bookable", "غير قابل للحجز"))</td>
+                            <td>
+                                <button type="button" class="ghost-button" @onclick="() => SelectEmployeeAsync(employee)" disabled="@IsBusy">@T("Manage", "إدارة")</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </section>
+
+    @if (SelectedEmployee is not null)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@T("Selected Employee", "الموظف المحدد")</span>
+                    <h2>@SelectedEmployee.FullName</h2>
+                </div>
+                <p>@T("Use this area for check-in / check-out, shift assignment, leave planning, and employee document tracking.", "استخدم هذه المساحة لتسجيل الدخول والخروج وتعيين الشفتات وتخطيط الإجازات ومتابعة مستندات الموظف.")</p>
+            </div>
+
+            <div class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">@T("Status Today", "حالة اليوم")</span>
+                    <strong class="metric-value">@MapAttendanceStatus(SelectedEmployee.TodayAttendanceStatus)</strong>
+                    <span class="metric-note">@FormatTodayAttendance(SelectedEmployee)</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@T("Role Type", "نوع الدور")</span>
+                    <strong class="metric-value">@(SelectedEmployee.HasSystemAccess ? SelectedEmployee.LinkedUserRole ?? T("System user", "مستخدم نظام") : T("Staff only", "موظف فقط"))</strong>
+                    <span class="metric-note">@T("Not every employee needs a login to be managed here.", "ليس كل موظف يحتاج إلى تسجيل دخول ليتم إدارته من هنا.")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@T("Weekly Off", "الإجازة الأسبوعية")</span>
+                    <strong class="metric-value">@(string.IsNullOrWhiteSpace(SelectedEmployee.WeeklyOffDays) ? T("Not set", "غير محدد") : SelectedEmployee.WeeklyOffDays)</strong>
+                    <span class="metric-note">@T("Used later for payroll and attendance logic.", "تُستخدم لاحقاً في منطق الرواتب والحضور.")</span>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">@T("Today Deduction", "خصم اليوم")</span>
+                    <strong class="metric-value">@FormatMoney(SelectedEmployee.TodayDeductionAmount)</strong>
+                    <span class="metric-note">@T("Running deduction currently calculated for the selected employee.", "الخصم الجاري احتسابه حالياً للموظف المحدد.")</span>
+                </article>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button type="button" class="submit-button" @onclick="CheckInAsync" disabled="@IsBusy">@T("Check In", "تسجيل دخول")</button>
+                <button type="button" class="ghost-button" @onclick="CheckOutAsync" disabled="@IsBusy">@T("Check Out", "تسجيل خروج")</button>
+                <button type="button" class="ghost-button" @onclick='() => MarkAttendanceAsync("present")' disabled="@IsBusy">@T("Mark Present", "تحديد حضور")</button>
+                <button type="button" class="ghost-button" @onclick='() => MarkAttendanceAsync("late")' disabled="@IsBusy">@T("Mark Late", "تحديد تأخير")</button>
+                <button type="button" class="ghost-button" @onclick='() => MarkAttendanceAsync("absent")' disabled="@IsBusy">@T("Mark Absent", "تحديد غياب")</button>
+                <button type="button" class="ghost-button" @onclick='() => MarkAttendanceAsync("leave")' disabled="@IsBusy">@T("Mark Leave", "تحديد إجازة")</button>
+            </div>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@T("Shifts", "الشفتات")</span>
+                    <h2>@T("Attendance and working schedule", "الحضور وجدول العمل")</h2>
+                </div>
+                <p>@T("Shift time, grace minutes, and weekly pattern feed directly into late detection and future payroll deductions.", "أوقات الشفت ومدة السماح والنمط الأسبوعي تدخل مباشرة في كشف التأخير وخصومات الرواتب المستقبلية.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label>@T("Shift Name", "اسم الشفت")</label>
+                    <input class="form-input" @bind="CreateShiftModel.Name" />
+                </div>
+                <div class="field">
+                    <label>@T("Start", "البداية")</label>
+                    <input class="form-input" @bind="ShiftStartValue" placeholder="09:00" />
+                </div>
+                <div class="field">
+                    <label>@T("End", "النهاية")</label>
+                    <input class="form-input" @bind="ShiftEndValue" placeholder="18:00" />
+                </div>
+                <div class="field">
+                    <label>@T("Grace Minutes", "دقائق السماح")</label>
+                    <input class="form-input" type="number" @bind="CreateShiftModel.GraceMinutes" />
+                </div>
+                <div class="field">
+                    <label>@T("Weekly Pattern", "النمط الأسبوعي")</label>
+                    <input class="form-input" @bind="CreateShiftModel.WeeklyPattern" placeholder="@T("Sun-Thu / Daily / Custom", "الأحد-الخميس / يومي / مخصص")" />
+                </div>
+                <div class="field">
+                    <label>@T("Effective From", "فعال من")</label>
+                    <input class="form-input" type="date" @bind="ShiftEffectiveFrom" />
+                </div>
+                <div class="field">
+                    <label>@T("Effective To", "فعال إلى")</label>
+                    <input class="form-input" type="date" @bind="ShiftEffectiveTo" />
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button type="button" class="submit-button" @onclick="CreateShiftAsync" disabled="@IsBusy">@T("Create Shift", "إنشاء شفت")</button>
+            </div>
+
+            <div class="products-table-wrap" style="margin-top:18px;">
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>@T("Shift", "الشفت")</th>
+                            <th>@T("Time", "الوقت")</th>
+                            <th>@T("Grace", "السماح")</th>
+                            <th>@T("Pattern", "النمط")</th>
+                            <th>@T("Effective", "الفعالية")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (EmployeeShifts.Count == 0)
+                        {
+                            <tr><td colspan="5">@T("No shifts recorded for this employee yet.", "لا توجد شفتات مسجلة لهذا الموظف حتى الآن.")</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var shift in EmployeeShifts)
+                            {
+                                <tr>
+                                    <td>@shift.Name</td>
+                                    <td>@shift.StartTime.ToString(@"hh\:mm") - @shift.EndTime.ToString(@"hh\:mm")</td>
+                                    <td>@shift.GraceMinutes @T("min", "د")</td>
+                                    <td>@(string.IsNullOrWhiteSpace(shift.WeeklyPattern) ? "-" : shift.WeeklyPattern)</td>
+                                    <td>@FormatDateRange(shift.EffectiveFrom, shift.EffectiveTo)</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@T("Leave", "الإجازات")</span>
+                    <h2>@T("Time off and paid leave", "الإجازات والغياب المدفوع")</h2>
+                </div>
+                <p>@T("Use leave entries to protect payroll calculations and keep attendance reports accurate.", "استخدم سجلات الإجازات لحماية حسابات الرواتب والحفاظ على دقة تقارير الحضور.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label>@T("Leave Type", "نوع الإجازة")</label>
+                    <select class="form-input" @bind="CreateLeaveModel.LeaveType">
+                        <option value="annual">@T("Annual", "سنوية")</option>
+                        <option value="sick">@T("Sick", "مرضية")</option>
+                        <option value="emergency">@T("Emergency", "طارئة")</option>
+                        <option value="unpaid">@T("Unpaid", "غير مدفوعة")</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>@T("Start Date", "تاريخ البداية")</label>
+                    <input class="form-input" type="date" @bind="LeaveStartDate" />
+                </div>
+                <div class="field">
+                    <label>@T("End Date", "تاريخ النهاية")</label>
+                    <input class="form-input" type="date" @bind="LeaveEndDate" />
+                </div>
+                <div class="field">
+                    <label>@T("Notes", "ملاحظات")</label>
+                    <input class="form-input" @bind="CreateLeaveModel.Notes" />
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <label class="status-pill active" style="gap:8px;">
+                    <input type="checkbox" @bind="CreateLeaveModel.IsPaid" />
+                    @T("Paid leave", "إجازة مدفوعة")
+                </label>
+                <button type="button" class="submit-button" @onclick="CreateLeaveAsync" disabled="@IsBusy">@T("Create Leave", "إنشاء إجازة")</button>
+            </div>
+
+            <div class="products-table-wrap" style="margin-top:18px;">
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>@T("Type", "النوع")</th>
+                            <th>@T("From", "من")</th>
+                            <th>@T("To", "إلى")</th>
+                            <th>@T("Paid", "مدفوعة")</th>
+                            <th>@T("Status", "الحالة")</th>
+                            <th>@T("Notes", "ملاحظات")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (EmployeeLeaves.Count == 0)
+                        {
+                            <tr><td colspan="6">@T("No leave records loaded for this employee yet.", "لا توجد سجلات إجازات محمّلة لهذا الموظف حتى الآن.")</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var leave in EmployeeLeaves)
+                            {
+                                <tr>
+                                    <td>@leave.LeaveType</td>
+                                    <td>@leave.StartDate.ToString("yyyy-MM-dd")</td>
+                                    <td>@leave.EndDate.ToString("yyyy-MM-dd")</td>
+                                    <td>@(leave.IsPaid ? T("Yes", "نعم") : T("No", "لا"))</td>
+                                    <td>@leave.Status</td>
+                                    <td>@(string.IsNullOrWhiteSpace(leave.Notes) ? "-" : leave.Notes)</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@T("Documents", "المستندات")</span>
+                    <h2>@T("Staff file and official papers", "ملف الموظف والأوراق الرسمية")</h2>
+                </div>
+                <p>@T("Store passport, ID, contract, certificate, or any branch-level employee document reference here.", "احفظ الجواز أو الهوية أو العقد أو الشهادة أو أي مرجع لمستند خاص بموظف الفرع هنا.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label>@T("Title", "العنوان")</label>
+                    <input class="form-input" @bind="CreateDocumentModel.Title" />
+                </div>
+                <div class="field">
+                    <label>@T("Document Type", "نوع المستند")</label>
+                    <input class="form-input" @bind="CreateDocumentModel.DocumentType" placeholder="@T("Passport / ID / Contract", "جواز / هوية / عقد")" />
+                </div>
+                <div class="field">
+                    <label>@T("File Name", "اسم الملف")</label>
+                    <input class="form-input" @bind="CreateDocumentModel.FileName" />
+                </div>
+                <div class="field">
+                    <label>@T("File URL", "رابط الملف")</label>
+                    <input class="form-input" @bind="CreateDocumentModel.FileUrl" />
+                </div>
+                <div class="field">
+                    <label>@T("Expires At", "تاريخ الانتهاء")</label>
+                    <input class="form-input" type="date" @bind="DocumentExpiresAt" />
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button type="button" class="submit-button" @onclick="CreateDocumentAsync" disabled="@IsBusy">@T("Create Document", "إضافة مستند")</button>
+            </div>
+
+            <div class="products-table-wrap" style="margin-top:18px;">
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>@T("Title", "العنوان")</th>
+                            <th>@T("Type", "النوع")</th>
+                            <th>@T("File", "الملف")</th>
+                            <th>@T("Expires", "الانتهاء")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (EmployeeDocuments.Count == 0)
+                        {
+                            <tr><td colspan="4">@T("No employee documents loaded yet.", "لا توجد مستندات موظف محمّلة حتى الآن.")</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var document in EmployeeDocuments)
+                            {
+                                <tr>
+                                    <td>@document.Title</td>
+                                    <td>@document.DocumentType</td>
+                                    <td>@(string.IsNullOrWhiteSpace(document.FileUrl) ? document.FileName ?? "-" : document.FileUrl)</td>
+                                    <td>@(document.ExpiresAt?.ToString("yyyy-MM-dd") ?? "-")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>@T("Date", "التاريخ")</th>
+                        <th>@T("Status", "الحالة")</th>
+                        <th>@T("Check In", "الدخول")</th>
+                        <th>@T("Check Out", "الخروج")</th>
+                        <th>@T("Worked", "ساعات العمل")</th>
+                        <th>@T("Late", "التأخير")</th>
+                        <th>@T("Deduction", "الخصم")</th>
+                        <th>@T("Shift", "الشفت")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (EmployeeAttendance.Count == 0)
+                    {
+                        <tr><td colspan="8">@T("No attendance records loaded for this employee yet.", "لا توجد سجلات حضور محمّلة لهذا الموظف حتى الآن.")</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var attendance in EmployeeAttendance)
+                        {
+                            <tr>
+                                <td>@attendance.AttendanceDate.ToString("yyyy-MM-dd")</td>
+                                <td>@MapAttendanceStatus(attendance.Status)</td>
+                                <td>@FormatDateTime(attendance.CheckInAt)</td>
+                                <td>@FormatDateTime(attendance.CheckOutAt)</td>
+                                <td>@attendance.WorkedMinutes @T("min", "د")</td>
+                                <td>@attendance.LateMinutes @T("min", "د")</td>
+                                <td>@FormatMoney(attendance.DeductionAmount)</td>
+                                <td>@(string.IsNullOrWhiteSpace(attendance.ShiftName) ? "-" : attendance.ShiftName)</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private string FlashMessage { get; set; } = string.Empty;
+    private string ErrorMessage { get; set; } = string.Empty;
+
+    private List<EmployeeListItemModel> EmployeeItems { get; set; } = [];
+    private BranchAttendanceSummaryModel AttendanceSummary { get; set; } = new() { Date = DateTime.Today };
+    private EmployeeListItemModel? SelectedEmployee { get; set; }
+    private List<EmployeeAttendanceModel> EmployeeAttendance { get; set; } = [];
+    private List<EmployeeShiftModel> EmployeeShifts { get; set; } = [];
+    private List<EmployeeLeaveModel> EmployeeLeaves { get; set; } = [];
+    private List<EmployeeDocumentModel> EmployeeDocuments { get; set; } = [];
+
+    private CreateEmployeeRequestModel CreateEmployeeModel { get; set; } = new();
+    private CreateEmployeeShiftRequestModel CreateShiftModel { get; set; } = new() { Name = "Main Shift", GraceMinutes = 10, IsActive = true };
+    private CreateEmployeeLeaveRequestModel CreateLeaveModel { get; set; } = new();
+    private CreateEmployeeDocumentRequestModel CreateDocumentModel { get; set; } = new();
+
+    private DateTime? CreateEmployeeHireDate { get; set; } = DateTime.Today;
+    private DateTime? ShiftEffectiveFrom { get; set; } = DateTime.Today;
+    private DateTime? ShiftEffectiveTo { get; set; }
+    private DateTime LeaveStartDate { get; set; } = DateTime.Today;
+    private DateTime LeaveEndDate { get; set; } = DateTime.Today;
+    private DateTime? DocumentExpiresAt { get; set; }
+    private string ShiftStartValue { get; set; } = "09:00";
+    private string ShiftEndValue { get; set; } = "18:00";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+
+        try
+        {
+            await UiLanguage.InitializeAsync();
+            await SessionState.InitializeAsync();
+
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            if (!SessionState.CanAccessEmployees)
+            {
+                NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+                return;
+            }
+
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var branchId = GetBranchId();
+        EmployeeItems = (await TenantAdminApiClient.GetBranchEmployeesAsync(SessionState, branchId)).OrderBy(x => x.FullName).ToList();
+        AttendanceSummary = await TenantAdminApiClient.GetBranchAttendanceSummaryAsync(SessionState, branchId, DateTime.Today);
+
+        if (SelectedEmployee is not null)
+        {
+            var selected = EmployeeItems.FirstOrDefault(x => x.Id == SelectedEmployee.Id);
+            if (selected is not null)
+            {
+                SelectedEmployee = selected;
+                await LoadSelectedEmployeeAsync();
+            }
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        IsBusy = true;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            await LoadDataAsync();
+            FlashMessage = T("Employees refreshed successfully.", "تم تحديث الموظفين بنجاح.");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateEmployeeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CreateEmployeeModel.FullName))
+        {
+            ErrorMessage = T("Employee full name is required.", "الاسم الكامل للموظف مطلوب.");
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            CreateEmployeeModel.HireDate = CreateEmployeeHireDate;
+            var branchId = GetBranchId();
+            var created = await TenantAdminApiClient.CreateBranchEmployeeAsync(SessionState, branchId, CreateEmployeeModel);
+            CreateEmployeeModel = new CreateEmployeeRequestModel();
+            CreateEmployeeHireDate = DateTime.Today;
+            await LoadDataAsync();
+            SelectedEmployee = EmployeeItems.FirstOrDefault(x => x.Id == created.Id);
+            await LoadSelectedEmployeeAsync();
+            FlashMessage = T("Employee created successfully.", "تم إنشاء الموظف بنجاح.");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectEmployeeAsync(EmployeeListItemModel employee)
+    {
+        SelectedEmployee = employee;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+        await LoadSelectedEmployeeAsync();
+    }
+
+    private async Task LoadSelectedEmployeeAsync()
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        var branchId = GetBranchId();
+        var employeeId = SelectedEmployee.Id;
+        EmployeeAttendance = (await TenantAdminApiClient.GetEmployeeAttendanceAsync(SessionState, branchId, employeeId)).OrderByDescending(x => x.AttendanceDate).ToList();
+        EmployeeShifts = (await TenantAdminApiClient.GetEmployeeShiftsAsync(SessionState, branchId, employeeId)).OrderByDescending(x => x.EffectiveFrom ?? DateTime.MinValue).ToList();
+        EmployeeLeaves = (await TenantAdminApiClient.GetEmployeeLeavesAsync(SessionState, branchId, employeeId)).OrderByDescending(x => x.StartDate).ToList();
+        EmployeeDocuments = (await TenantAdminApiClient.GetEmployeeDocumentsAsync(SessionState, branchId, employeeId)).OrderBy(x => x.Title).ToList();
+    }
+
+    private async Task CheckInAsync()
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        await RunEmployeeActionAsync(async () =>
+        {
+            await TenantAdminApiClient.CheckInEmployeeAsync(SessionState, GetBranchId(), SelectedEmployee.Id, new EmployeeAttendanceCheckInRequestModel
+            {
+                AttendanceDate = DateTime.Today,
+                CheckInAt = DateTime.Now,
+                Notes = T("Manual check-in from employee page", "تسجيل دخول يدوي من صفحة الموظفين")
+            });
+            await LoadDataAsync();
+        }, T("Employee checked in successfully.", "تم تسجيل دخول الموظف بنجاح."));
+    }
+
+    private async Task CheckOutAsync()
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        await RunEmployeeActionAsync(async () =>
+        {
+            await TenantAdminApiClient.CheckOutEmployeeAsync(SessionState, GetBranchId(), SelectedEmployee.Id, new EmployeeAttendanceCheckOutRequestModel
+            {
+                AttendanceDate = DateTime.Today,
+                CheckOutAt = DateTime.Now,
+                Notes = T("Manual check-out from employee page", "تسجيل خروج يدوي من صفحة الموظفين")
+            });
+            await LoadDataAsync();
+        }, T("Employee checked out successfully.", "تم تسجيل خروج الموظف بنجاح."));
+    }
+
+    private async Task MarkAttendanceAsync(string status)
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        await RunEmployeeActionAsync(async () =>
+        {
+            await TenantAdminApiClient.MarkEmployeeAttendanceAsync(SessionState, GetBranchId(), SelectedEmployee.Id, new MarkEmployeeAttendanceRequestModel
+            {
+                AttendanceDate = DateTime.Today,
+                Status = status,
+                Notes = T("Manual attendance update", "تحديث حضور يدوي")
+            });
+            await LoadDataAsync();
+        }, $"{T("Attendance marked as", "تم تحديد الحضور كـ")} {MapAttendanceStatus(status)}.");
+    }
+
+    private async Task CreateShiftAsync()
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        if (!TimeSpan.TryParse(ShiftStartValue, out var startTime) || !TimeSpan.TryParse(ShiftEndValue, out var endTime))
+        {
+            ErrorMessage = T("Shift start and end time are required.", "وقت بداية ونهاية الشفت مطلوبان.");
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        await RunEmployeeActionAsync(async () =>
+        {
+            CreateShiftModel.StartTime = startTime;
+            CreateShiftModel.EndTime = endTime;
+            CreateShiftModel.EffectiveFrom = ShiftEffectiveFrom;
+            CreateShiftModel.EffectiveTo = ShiftEffectiveTo;
+            await TenantAdminApiClient.CreateEmployeeShiftAsync(SessionState, GetBranchId(), SelectedEmployee.Id, CreateShiftModel);
+            CreateShiftModel = new CreateEmployeeShiftRequestModel { Name = "Main Shift", GraceMinutes = 10, IsActive = true };
+            ShiftStartValue = "09:00";
+            ShiftEndValue = "18:00";
+            ShiftEffectiveFrom = DateTime.Today;
+            ShiftEffectiveTo = null;
+            await LoadSelectedEmployeeAsync();
+        }, T("Shift created successfully.", "تم إنشاء الشفت بنجاح."));
+    }
+
+    private async Task CreateLeaveAsync()
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        await RunEmployeeActionAsync(async () =>
+        {
+            CreateLeaveModel.StartDate = LeaveStartDate;
+            CreateLeaveModel.EndDate = LeaveEndDate;
+            await TenantAdminApiClient.CreateEmployeeLeaveAsync(SessionState, GetBranchId(), SelectedEmployee.Id, CreateLeaveModel);
+            CreateLeaveModel = new CreateEmployeeLeaveRequestModel();
+            LeaveStartDate = DateTime.Today;
+            LeaveEndDate = DateTime.Today;
+            await LoadSelectedEmployeeAsync();
+        }, T("Leave record created successfully.", "تم إنشاء سجل الإجازة بنجاح."));
+    }
+
+    private async Task CreateDocumentAsync()
+    {
+        if (SelectedEmployee is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(CreateDocumentModel.Title))
+        {
+            ErrorMessage = T("Document title is required.", "عنوان المستند مطلوب.");
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        await RunEmployeeActionAsync(async () =>
+        {
+            CreateDocumentModel.ExpiresAt = DocumentExpiresAt;
+            await TenantAdminApiClient.CreateEmployeeDocumentAsync(SessionState, GetBranchId(), SelectedEmployee.Id, CreateDocumentModel);
+            CreateDocumentModel = new CreateEmployeeDocumentRequestModel();
+            DocumentExpiresAt = null;
+            await LoadSelectedEmployeeAsync();
+        }, T("Employee document added successfully.", "تمت إضافة مستند الموظف بنجاح."));
+    }
+
+    private async Task RunEmployeeActionAsync(Func<Task> action, string successMessage)
+    {
+        IsBusy = true;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            await action();
+            FlashMessage = successMessage;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private Guid GetBranchId()
+    {
+        if (!Guid.TryParse(SessionState.BranchId, out var branchId))
+            throw new InvalidOperationException(T("Current branch is missing from the session.", "الفرع الحالي مفقود من الجلسة."));
+
+        return branchId;
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private string MapAttendanceStatus(string? status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "present" => _isArabic ? "حاضر" : "Present",
+            "late" => _isArabic ? "متأخر" : "Late",
+            "absent" => _isArabic ? "غائب" : "Absent",
+            "leave" => _isArabic ? "إجازة" : "Leave",
+            _ => string.IsNullOrWhiteSpace(status) ? (_isArabic ? "قيد الانتظار" : "Pending") : status
+        };
+
+    private static string FormatTodayAttendance(EmployeeListItemModel employee)
+    {
+        var checkIn = employee.TodayCheckInAt?.ToLocalTime().ToString("HH:mm") ?? "--";
+        var checkOut = employee.TodayCheckOutAt?.ToLocalTime().ToString("HH:mm") ?? "--";
+        return $"{checkIn} / {checkOut}";
+    }
+
+    private static string FormatDateTime(DateTime? dateTime)
+        => dateTime?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+
+    private static string FormatDateRange(DateTime? from, DateTime? to)
+        => $"{(from?.ToString("yyyy-MM-dd") ?? "-")} -> {(to?.ToString("yyyy-MM-dd") ?? "-")}";
+
+    private static string FormatMoney(decimal? amount)
+        => $"{(amount ?? 0m):0.##} AED";
+
+    private bool _isArabic => UiLanguage.IsArabic;
+    private string T(string english, string arabic) => UiLanguage.Text(english, arabic);
+}

@@ -1,0 +1,96 @@
+<div class="session-card user-access-card @(Compact ? "compact" : string.Empty)">
+    <div class="session-user-top">
+        @if (!string.IsNullOrWhiteSpace(PhotoUrl))
+        {
+            <img class="session-user-photo" src="@PhotoUrl" alt="@($"{UserName} photo")" />
+        }
+        else
+        {
+            <div class="session-user-avatar" aria-label="Employee avatar">
+                @GetInitials()
+            </div>
+        }
+
+        <div class="session-user-meta">
+            <div class="session-user-name">@UserName</div>
+            @if (!string.IsNullOrWhiteSpace(RoleLabel))
+            {
+                <div class="session-user-role">@RoleLabel</div>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(ScopeLabel))
+    {
+        <div><strong>Scope:</strong> @ScopeLabel</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(TenantLabel))
+    {
+        <div><strong>Tenant:</strong> @TenantLabel</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(BranchLabel))
+    {
+        <div><strong>Branch:</strong> @BranchLabel</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(UserName))
+    {
+        <div><strong>User:</strong> @UserName</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(RoleLabel))
+    {
+        <div><strong>Role:</strong> @RoleLabel</div>
+    }
+
+    @if (OnLogout.HasDelegate)
+    {
+        <button class="ghost-button" @onclick="OnLogout">@LogoutText</button>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string ScopeLabel { get; set; } = string.Empty;
+
+    [Parameter]
+    public string TenantLabel { get; set; } = string.Empty;
+
+    [Parameter]
+    public string BranchLabel { get; set; } = string.Empty;
+
+    [Parameter]
+    public string UserName { get; set; } = string.Empty;
+
+    [Parameter]
+    public string RoleLabel { get; set; } = string.Empty;
+
+    [Parameter]
+    public string PhotoUrl { get; set; } = string.Empty;
+
+    [Parameter]
+    public string LogoutText { get; set; } = "Sign Out";
+
+    [Parameter]
+    public bool Compact { get; set; }
+
+    [Parameter]
+    public EventCallback OnLogout { get; set; }
+
+    private string GetInitials()
+    {
+        var source = string.IsNullOrWhiteSpace(UserName) ? "AY" : UserName.Trim();
+        var parts = source.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (parts.Length >= 2)
+        {
+            return string.Concat(parts[0][0], parts[1][0]).ToUpperInvariant();
+        }
+
+        return source.Length >= 2
+            ? source[..2].ToUpperInvariant()
+            : source.ToUpperInvariant();
+    }
+}

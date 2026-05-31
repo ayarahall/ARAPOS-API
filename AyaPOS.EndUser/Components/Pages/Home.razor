@@ -1,0 +1,209 @@
+@page "/"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Auth
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Ui
+@inject AuthApiClient AuthApiClient
+@inject TenantLookupApiClient TenantLookupApiClient
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject UiLanguageState UiLanguage
+
+<PageTitle>@UiLanguage.Text("Sign In", "تسجيل الدخول")</PageTitle>
+
+<div class="login-page">
+    <section class="login-hero">
+        <div class="hero-brand">
+            <img class="hero-brand-logo" src="/ayapos-logo.svg" alt="AyaPOS" />
+            <a class="owner-access-link" href="/owner-console">@UiLanguage.Text("Owner Console", "لوحة المالك")</a>
+            <div class="brand-chip">@UiLanguage.Text("AyaPOS End User", "مستخدم AyaPOS")</div>
+        </div>
+        <h1>@UiLanguage.Text("Run your branch from one clean workspace", "شغّل فرعك من مساحة عمل واحدة مرتبة")</h1>
+        <p>
+            @UiLanguage.Text(
+                "Sign in with your tenant, branch, and staff account to access products, services, customers, invoices, and cashier session tools.",
+                "سجّل دخولك باستخدام التيننت والفرع وحساب الموظف للوصول إلى المنتجات والخدمات والعملاء والفواتير وأدوات جلسة الكاشير.")
+        </p>
+        <div class="hero-points">
+            <div>@UiLanguage.Text("Fast tenant and branch access", "دخول سريع للتيننت والفرع")</div>
+            <div>@UiLanguage.Text("Connected directly to the live API", "مرتبط مباشرة مع الـ API")</div>
+            <div>@UiLanguage.Text("Built for daily sales operations", "مصمم لعمليات البيع اليومية")</div>
+        </div>
+    </section>
+
+    <section class="login-card-wrap">
+        <div class="login-card">
+            <div class="login-card-header">
+                <span class="eyebrow">@UiLanguage.Text("Welcome Back", "أهلاً بعودتك")</span>
+                <h2>@UiLanguage.Text("Sign In", "تسجيل الدخول")</h2>
+                <p>@UiLanguage.Text("Enter your workspace details to continue.", "أدخل بيانات مساحة العمل للمتابعة.")</p>
+            </div>
+
+            <EditForm Model="@Model" OnValidSubmit="HandleLoginAsync" class="login-form">
+                <DataAnnotationsValidator />
+
+                <div class="field">
+                    <label for="tenantSlug">@UiLanguage.Text("Tenant Slug", "معرّف التيننت")</label>
+                    <div class="toolbar-grid">
+                        <InputText id="tenantSlug" class="form-input" @bind-Value="Model.TenantSlug" placeholder="beauty-one" />
+                        <button class="ghost-button" type="button" @onclick="LoadBranchesAsync" disabled="@IsBranchLookupBusy">
+                            @(IsBranchLookupBusy
+                                ? UiLanguage.Text("Loading...", "جارٍ التحميل...")
+                                : UiLanguage.Text("Load Branches", "تحميل الفروع"))
+                        </button>
+                    </div>
+                    <ValidationMessage For="@(() => Model.TenantSlug)" />
+                </div>
+
+                <div class="field">
+                    <label for="branchId">@UiLanguage.Text("Branch", "الفرع")</label>
+                    <InputSelect id="branchId" class="form-input" @bind-Value="Model.BranchId">
+                        <option value="">@UiLanguage.Text("No branch selected yet", "لم يتم اختيار فرع بعد")</option>
+                        @foreach (var branch in Branches)
+                        {
+                            <option value="@branch.Id">@branch.Name (@branch.Code) - @branch.CurrencyCode</option>
+                        }
+                    </InputSelect>
+                    <small class="field-help">
+                        @UiLanguage.Text(
+                            "Tenant admins can sign in without selecting a branch. Branch users should load and select their branch first.",
+                            "يمكن لمدير التيننت الدخول بدون اختيار فرع. أما مستخدمو الفرع فيجب تحميل الفرع واختياره أولاً.")
+                    </small>
+                </div>
+
+                <div class="field">
+                    <label for="username">@UiLanguage.Text("Username", "اسم المستخدم")</label>
+                    <InputText id="username" class="form-input" @bind-Value="Model.Username" placeholder="admin" />
+                    <ValidationMessage For="@(() => Model.Username)" />
+                </div>
+
+                <div class="field">
+                    <label for="password">@UiLanguage.Text("Password", "كلمة المرور")</label>
+                    <InputText id="password" type="password" class="form-input" @bind-Value="Model.Password" placeholder="********" />
+                    <ValidationMessage For="@(() => Model.Password)" />
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+                {
+                    <div class="message message-error">@ErrorMessage</div>
+                }
+
+                <button class="submit-button" type="submit" disabled="@IsBusy">
+                    @(IsBusy
+                        ? UiLanguage.Text("Signing in...", "جارٍ تسجيل الدخول...")
+                        : UiLanguage.Text("Sign In", "تسجيل الدخول"))
+                </button>
+            </EditForm>
+        </div>
+    </section>
+</div>
+
+@code {
+    private readonly LoginFormModel Model = new();
+    private bool _sessionChecked;
+
+    private bool IsBusy { get; set; }
+    private bool IsBranchLookupBusy { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private List<TenantBranchOptionModel> Branches { get; set; } = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+        await SessionState.InitializeAsync();
+        await UiLanguage.InitializeAsync();
+
+        if (SessionState.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+            return;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadBranchesAsync()
+    {
+        ErrorMessage = string.Empty;
+        Branches = [];
+        Model.BranchId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(Model.TenantSlug))
+        {
+            ErrorMessage = UiLanguage.Text("Enter the tenant slug first.", "أدخل معرّف التيننت أولاً.");
+            return;
+        }
+
+        IsBranchLookupBusy = true;
+
+        try
+        {
+            Branches = (await TenantLookupApiClient.GetBranchesAsync(Model.TenantSlug)).ToList();
+            if (Branches.Count == 0)
+            {
+                ErrorMessage = UiLanguage.Text(
+                    "No active branches were found for this tenant.",
+                    "لم يتم العثور على فروع فعّالة لهذا التيننت.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBranchLookupBusy = false;
+        }
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            var result = await AuthApiClient.LoginAsync(Model);
+            var isTenantAdmin =
+                string.Equals(result.Role, "TENANT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(result.Role, "ADMIN", StringComparison.OrdinalIgnoreCase);
+
+            if (!isTenantAdmin && !Guid.TryParse(Model.BranchId, out _))
+            {
+                ErrorMessage = UiLanguage.Text(
+                    "Select a valid branch before opening a branch workspace.",
+                    "اختر فرعاً صحيحاً قبل فتح مساحة عمل الفرع.");
+                return;
+            }
+
+            var selectedBranchId = isTenantAdmin ? string.Empty : Model.BranchId.Trim();
+            var selectedBranchName = isTenantAdmin
+                ? string.Empty
+                : Branches.FirstOrDefault(x => x.Id.ToString() == Model.BranchId)?.Name ?? string.Empty;
+
+            await SessionState.SignInAsync(
+                result.Token,
+                Model.TenantSlug.Trim(),
+                selectedBranchId,
+                selectedBranchName,
+                Model.Username.Trim(),
+                result.Role,
+                result.TenantId.ToString(),
+                result.Permissions,
+                result.PermissionsConfigured);
+
+            NavigationManager.NavigateTo(isTenantAdmin ? "/tenant-admin" : "/workspace");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+}

@@ -1,0 +1,1163 @@
+@page "/workspace"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Cashier
+@using Ayapos.EndUser.Models.Customers
+@using Ayapos.EndUser.Models.Expenses
+@using Ayapos.EndUser.Models.Invoices
+@using Ayapos.EndUser.Models.Products
+@using Ayapos.EndUser.Models.Services
+@using Ayapos.EndUser.Models.Appointments
+@using Ayapos.EndUser.Services.Appointments
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Cashier
+@using Ayapos.EndUser.Services.Customers
+@using Ayapos.EndUser.Services.Expenses
+@using Ayapos.EndUser.Services.Invoices
+@using Ayapos.EndUser.Services.Products
+@using Ayapos.EndUser.Services.Services
+@using Ayapos.EndUser.Services.Ui
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject ProductsApiClient ProductsApiClient
+@inject ServicesApiClient ServicesApiClient
+@inject CustomersApiClient CustomersApiClient
+@inject InvoicesApiClient InvoicesApiClient
+@inject CashierApiClient CashierApiClient
+@inject AppointmentsApiClient AppointmentsApiClient
+@inject ExpensesApiClient ExpensesApiClient
+@inject UiLanguageState UiLanguage
+
+<PageTitle>@T("Workspace", "مساحة العمل")</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="@WorkspaceTitle" Description="@WorkspaceDescription" SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="workspace" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@T("Branch Context", "سياق الفرع")</span>
+                <h2>@CurrentBranchTitle</h2>
+            </div>
+            <p>@CurrentBranchDescription</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="ghost-button" @onclick="RefreshWorkspaceAsync" disabled="@IsLoading">@T("Refresh Workspace", "تحديث مساحة العمل")</button>
+        </div>
+        <div class="metrics-grid" style="margin-top:18px;">
+            <article class="metric-card">
+                <span class="metric-label">@T("Top Products", "أعلى المنتجات")</span>
+                <strong class="metric-value">@TopProductsCountLabel</strong>
+                <span class="metric-note">@T("Best-selling products captured from today's invoice lines.", "أفضل المنتجات مبيعاً من فواتير اليوم.")</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">@T("Top Services", "أعلى الخدمات")</span>
+                <strong class="metric-value">@TopServicesCountLabel</strong>
+                <span class="metric-note">@T("Most valuable services sold through the branch today.", "أعلى الخدمات قيمةً والمباعة عبر الفرع اليوم.")</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">@T("Recent Payments", "المدفوعات الأخيرة")</span>
+                <strong class="metric-value">@RecentPaymentsCountLabel</strong>
+                <span class="metric-note">@T("Latest payments posted today for cashier and manager follow-up.", "آخر المدفوعات المسجلة اليوم لمتابعة الكاشير والإدارة.")</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@T("Top Sellers", "الأكثر حركة")</span>
+                <h2>@T("Products and services moving today", "المنتجات والخدمات المتحركة اليوم")</h2>
+            </div>
+            <p>@T("These summaries help the branch team quickly see what is selling without opening detailed invoice reports.", "هذه الملخصات تساعد فريق الفرع على معرفة ما يُباع بسرعة بدون فتح تقارير الفواتير التفصيلية.")</p>
+        </div>
+
+        <div class="products-table-wrap" style="margin-top:18px;">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>@T("Type", "النوع")</th>
+                        <th>@T("Name", "الاسم")</th>
+                        <th>@T("Quantity", "الكمية")</th>
+                        <th>@T("Sales", "المبيعات")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (TodayTopItems.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4">@T("No product or service sales have been captured yet for today.", "لا توجد مبيعات منتجات أو خدمات مسجلة لليوم بعد.")</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in TodayTopItems)
+                        {
+                            <tr>
+                                <td>@item.ItemType</td>
+                                <td>@item.Name</td>
+                                <td>@item.Quantity</td>
+                                <td>@FormatMoney(item.TotalCents, item.CurrencyCode)</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@T("Payments", "المدفوعات")</span>
+                <h2>@T("Latest posted payments today", "آخر المدفوعات المسجلة اليوم")</h2>
+            </div>
+            <p>@T("Use this list to confirm payment flow, references, and the invoices that were touched most recently.", "استخدم هذه القائمة لتأكيد حركة الدفع والمراجع والفواتير التي تم التعامل معها مؤخراً.")</p>
+        </div>
+
+        <div class="products-table-wrap" style="margin-top:18px;">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>@T("Invoice", "الفاتورة")</th>
+                        <th>@T("Method", "الطريقة")</th>
+                        <th>@T("Amount", "المبلغ")</th>
+                        <th>@T("Reference", "المرجع")</th>
+                        <th>@T("Paid At", "وقت الدفع")</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (RecentPayments.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5">@T("No payments have been recorded yet for today.", "لا توجد مدفوعات مسجلة لليوم بعد.")</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var payment in RecentPayments)
+                        {
+                            <tr>
+                                <td>@payment.InvoiceCode</td>
+                                <td>@MapPaymentMethod(payment.Method)</td>
+                                <td>@FormatMoney(payment.AmountCents)</td>
+                                <td>@(string.IsNullOrWhiteSpace(payment.Reference) ? T("No reference", "بدون مرجع") : payment.Reference)</td>
+                                <td>@payment.PaidAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Visual Snapshot</span>
+                <h2>Bars for sales and payment flow</h2>
+            </div>
+            <p>This adds a fast visual layer for sales and payment movement so the dashboard feels more like an operations board, not just a card list.</p>
+        </div>
+
+        <div class="workspace-chart-grid" style="margin-top:18px;">
+            <article class="workspace-chart-card">
+                <div class="workspace-chart-title">Top sellers today</div>
+                @if (TopSellerBars.Count == 0)
+                {
+                    <div class="table-secondary-cell">No sales bars to render yet.</div>
+                }
+                else
+                {
+                    @foreach (var bar in TopSellerBars)
+                    {
+                        <div class="workspace-bar-row">
+                            <div class="workspace-bar-label">@bar.Label</div>
+                            <div class="workspace-bar-track">
+                                <div class="workspace-bar-fill" style="width:@bar.Width;"></div>
+                            </div>
+                            <div class="workspace-bar-value">@bar.Value</div>
+                        </div>
+                    }
+                }
+            </article>
+
+            <article class="workspace-chart-card">
+                <div class="workspace-chart-title">Payment methods snapshot</div>
+                @if (PaymentMethodBars.Count == 0)
+                {
+                    <div class="table-secondary-cell">No payment mix is visible yet for today.</div>
+                }
+                else
+                {
+                    @foreach (var bar in PaymentMethodBars)
+                    {
+                        <div class="workspace-bar-row">
+                            <div class="workspace-bar-label">@bar.Label</div>
+                            <div class="workspace-bar-track workspace-bar-track-alt">
+                                <div class="workspace-bar-fill workspace-bar-fill-alt" style="width:@bar.Width;"></div>
+                            </div>
+                            <div class="workspace-bar-value">@bar.Value</div>
+                        </div>
+                    }
+                }
+            </article>
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Products</span>
+            <strong class="metric-value">@ProductsCount</strong>
+            <span class="metric-note">Visible branch products ready for browsing and sale.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Services</span>
+            <strong class="metric-value">@ServicesCount</strong>
+            <span class="metric-note">Branch services available to add into invoices.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Customers</span>
+            <strong class="metric-value">@CustomersCount</strong>
+            <span class="metric-note">Customer records already available for this branch.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Cashier</span>
+            <strong class="metric-value">@CashierStateLabel</strong>
+            <span class="metric-note">@CashierStateNote</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Today Snapshot</span>
+                <h2>Branch performance for today</h2>
+            </div>
+            <p>Use this daily summary to understand the selling day before jumping into invoices, cashier, or customer follow-up.</p>
+        </div>
+
+        <div class="metrics-grid" style="margin-top:18px;">
+            <article class="metric-card">
+                <span class="metric-label">Business Day</span>
+                <strong class="metric-value">@DailySummaryDateLabel</strong>
+                <span class="metric-note">UTC business date returned by the branch summary endpoint.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Invoices Today</span>
+                <strong class="metric-value">@DailyInvoiceCountLabel</strong>
+                <span class="metric-note">All invoices created today for this branch.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Collected Today</span>
+                <strong class="metric-value">@DailyCollectedLabel</strong>
+                <span class="metric-note">Payments already captured today for this branch.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Remaining Today</span>
+                <strong class="metric-value">@DailyRemainingLabel</strong>
+                <span class="metric-note">Gross sales minus recorded collections for the current day.</span>
+            </article>
+        </div>
+
+        <div class="featured-products-grid" style="margin-top:18px;">
+            <article class="product-feature-card">
+                <div class="product-feature-topline">
+                    <span class="product-feature-id">SALES</span>
+                </div>
+                <h3>Gross Sales</h3>
+                <div class="product-feature-price">@DailyGrossSalesLabel</div>
+                <div class="product-feature-meta">Total invoice value created today.</div>
+            </article>
+
+            <article class="product-feature-card">
+                <div class="product-feature-topline">
+                    <span class="product-feature-id">POSTED</span>
+                </div>
+                <h3>Posted Invoices</h3>
+                <div class="product-feature-price">@DailyPostedCountLabel</div>
+                <div class="product-feature-meta">Invoices that moved beyond draft today.</div>
+            </article>
+
+            <article class="product-feature-card">
+                <div class="product-feature-topline">
+                    <span class="product-feature-id">PAID</span>
+                </div>
+                <h3>Paid Invoices</h3>
+                <div class="product-feature-price">@DailyPaidCountLabel</div>
+                <div class="product-feature-meta">Invoices fully settled today.</div>
+            </article>
+
+            <article class="product-feature-card">
+                <div class="product-feature-topline">
+                    <span class="product-feature-id">CLIENTS</span>
+                </div>
+                <h3>Active Customers Today</h3>
+                <div class="product-feature-price">@DailyCustomerCountLabel</div>
+                <div class="product-feature-meta">Active customers touched by today’s branch invoices.</div>
+            </article>
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Access Scope</span>
+            <strong class="metric-value">@RoleDisplayName</strong>
+            <span class="metric-note">Current signed-in role for this branch workspace.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Primary Target</span>
+            <strong class="metric-value">@PrimaryTargetLabel</strong>
+            <span class="metric-note">@PrimaryTargetDescription</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Branch Id</span>
+            <strong class="metric-value">@BranchIdDisplay</strong>
+            <span class="metric-note">Stored branch reference from the current session.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Available Areas</span>
+            <strong class="metric-value">@AvailableAreasCount</strong>
+            <span class="metric-note">@AvailableAreasSummary</span>
+        </article>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Appointments Today</span>
+            <strong class="metric-value">@AppointmentsCount</strong>
+            <span class="metric-note">Bookings currently visible inside this branch workspace.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Expenses Logged</span>
+            <strong class="metric-value">@ExpensesCount</strong>
+            <span class="metric-note">Operational branch expenses currently loaded for review.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Upcoming Visit</span>
+            <strong class="metric-value">@NextAppointmentLabel</strong>
+            <span class="metric-note">Nearest appointment currently scheduled for this branch.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Latest Expense</span>
+            <strong class="metric-value">@LatestExpenseLabel</strong>
+            <span class="metric-note">Most recent cost entry visible to this branch workspace.</span>
+        </article>
+    </section>
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Role Focus</span>
+                <h2>@PrimaryFocusTitle</h2>
+            </div>
+            <p>@PrimaryFocusDescription</p>
+        </div>
+
+        <div class="featured-products-grid" style="margin-top:18px;">
+            @foreach (var item in FocusCards)
+            {
+                <a class="product-feature-card action-card-link" href="@item.Href">
+                    <div class="product-feature-topline">
+                        <span class="product-feature-id">@item.Badge</span>
+                    </div>
+                    <h3>@item.Title</h3>
+                    <div class="product-feature-price">@item.Value</div>
+                    <div class="product-feature-meta">@item.Description</div>
+                </a>
+            }
+        </div>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Quick Actions</span>
+                <h2>Start the next task fast</h2>
+            </div>
+            <p>Use these direct paths to move through the branch workflow without hunting across separate screens.</p>
+        </div>
+
+        <div class="featured-products-grid" style="margin-top:18px;">
+            @foreach (var item in QuickActions)
+            {
+                <a class="product-feature-card action-card-link" href="@item.Href">
+                    <div class="product-feature-topline">
+                        <span class="product-feature-id">@item.Badge</span>
+                    </div>
+                    <h3>@item.Title</h3>
+                    <div class="product-feature-price">@item.Value</div>
+                    <div class="product-feature-meta">@item.Description</div>
+                </a>
+            }
+        </div>
+    </section>
+
+    @if (ShowInvoiceSpotlight)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Recent Sales</span>
+                    <h2>Invoices that matter right now</h2>
+                </div>
+                <p>Recent invoices and balances give the branch a quick snapshot before opening the detailed invoice screen.</p>
+            </div>
+
+            @if (IsLoading && RecentInvoices.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">Loading workspace...</div>
+            }
+            else if (RecentInvoices.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">No invoices available yet for this branch.</div>
+            }
+            else
+            {
+                <div class="featured-products-grid" style="margin-top:18px;">
+                    @foreach (var invoice in RecentInvoices)
+                    {
+                        <a class="product-feature-card action-card-link" href="@($"/invoices/{invoice.Id}")">
+                            <div class="product-feature-topline">
+                                <span class="status-pill @MapStatusClass(invoice.Status)">@invoice.Status</span>
+                                <span class="product-feature-id">@invoice.InvoiceCode</span>
+                            </div>
+                            <h3>@(string.IsNullOrWhiteSpace(invoice.CustomerName) ? "Walk-in customer" : invoice.CustomerName)</h3>
+                            <div class="product-feature-price">@FormatMoney(invoice.Remaining)</div>
+                            <div class="product-feature-meta">Total: @FormatMoney(invoice.Total)</div>
+                            <div class="product-feature-meta">Paid: @FormatMoney(invoice.TotalPaid)</div>
+                        </a>
+                    }
+                </div>
+            }
+        </section>
+    }
+
+    @if (ShowCustomerSpotlight)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Customer Activity</span>
+                    <h2>Customers to check today</h2>
+                </div>
+                <p>This view helps HR-style branch users keep an eye on active clients and their most recent invoice touchpoints.</p>
+            </div>
+
+            @if (RecentCustomers.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">No customer activity is available yet for this branch.</div>
+            }
+            else
+            {
+                <div class="featured-products-grid" style="margin-top:18px;">
+                    @foreach (var customer in RecentCustomers)
+                    {
+                        <a class="product-feature-card action-card-link" href="/customers">
+                            <div class="product-feature-topline">
+                                <span class="product-feature-id">CLIENT</span>
+                            </div>
+                            <h3>@customer.FullName</h3>
+                            <div class="product-feature-price">@customer.InvoiceCount invoices</div>
+                            <div class="product-feature-meta">Phone: @(string.IsNullOrWhiteSpace(customer.Phone) ? "Not set" : customer.Phone)</div>
+                            <div class="product-feature-meta">Last invoice: @(customer.LastInvoiceAt?.ToLocalTime().ToString("yyyy-MM-dd") ?? "No invoices yet")</div>
+                        </a>
+                    }
+                </div>
+            }
+        </section>
+    }
+
+    @if (ShowServiceSpotlight)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Service Highlights</span>
+                    <h2>Services ready for booking or sale</h2>
+                </div>
+                <p>Branch managers and HR can quickly review the most valuable visible services before planning the day.</p>
+            </div>
+
+            @if (TopServices.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">No service highlights are available yet for this branch.</div>
+            }
+            else
+            {
+                <div class="featured-products-grid" style="margin-top:18px;">
+                    @foreach (var service in TopServices)
+                    {
+                        <a class="product-feature-card action-card-link" href="/services">
+                            <div class="product-feature-topline">
+                                <span class="status-pill @(service.IsActive ? "active" : "inactive")">@(service.IsActive ? "Active" : "Inactive")</span>
+                                <span class="product-feature-id">SERVICE</span>
+                            </div>
+                            <h3>@GetServiceDisplayName(service)</h3>
+                            <div class="product-feature-price">@FormatMoney(service.Price)</div>
+                            <div class="product-feature-meta">Duration: @(service.DurationMin is null ? "Not set" : $"{service.DurationMin} min")</div>
+                            <div class="product-feature-meta">Currency: @service.CurrencyCode</div>
+                        </a>
+                    }
+                </div>
+            }
+        </section>
+    }
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Branch Schedule</span>
+                <h2>Appointments and operating costs</h2>
+            </div>
+            <p>This area gives the branch manager, HR, or cashier one place to spot the next visit and latest expense activity.</p>
+        </div>
+
+        <div class="products-table-wrap" style="margin-top:18px;">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Primary</th>
+                        <th>Details</th>
+                        <th>When</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (BranchActivityRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4">No appointment or expense activity is loaded yet for this branch.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var row in BranchActivityRows)
+                        {
+                            <tr>
+                                <td>@row.Type</td>
+                                <td>@row.Primary</td>
+                                <td>@row.Details</td>
+                                <td>@row.WhenLabel</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="products-table-wrap">
+        <table class="products-table">
+            <thead>
+                <tr>
+                    <th>Area</th>
+                    <th>Today View</th>
+                    <th>Why Open It</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <div class="table-primary-cell">Products</div>
+                        <div class="table-secondary-cell">Catalog and pricing</div>
+                    </td>
+                    <td>@ProductsCount visible items</td>
+                    <td>Browse ready-to-sell items and confirm pricing.</td>
+                    <td><a class="ghost-button action-link" href="/products">Open Products</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="table-primary-cell">Services</div>
+                        <div class="table-secondary-cell">Branch service menu</div>
+                    </td>
+                    <td>@ServicesCount active records</td>
+                    <td>Find services before building a mixed invoice.</td>
+                    <td><a class="ghost-button action-link" href="/services">Open Services</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="table-primary-cell">Customers</div>
+                        <div class="table-secondary-cell">Client lookup</div>
+                    </td>
+                    <td>@CustomersCount customer records</td>
+                    <td>Attach sales to existing customers or create a new profile.</td>
+                    <td><a class="ghost-button action-link" href="/customers">Open Customers</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="table-primary-cell">Cashier Session</div>
+                        <div class="table-secondary-cell">Drawer control</div>
+                    </td>
+                    <td>@CashierStateLabel</td>
+                    <td>Open the day, review expected cash, or close the drawer.</td>
+                    <td><a class="ghost-button action-link" href="/cashier">Open Cashier</a></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+</div>
+
+<style>
+    .workspace-chart-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:18px; }
+    .workspace-chart-card { border-radius:24px; padding:20px; background:rgba(255,255,255,0.78); box-shadow:0 18px 42px rgba(173,117,53,0.12); }
+    .workspace-chart-title { font-size:1rem; font-weight:800; color:#2a1b18; margin-bottom:16px; }
+    .workspace-bar-row { display:grid; grid-template-columns:minmax(120px, 1.2fr) minmax(160px, 2fr) auto; gap:12px; align-items:center; margin-bottom:12px; }
+    .workspace-bar-label { font-size:.92rem; font-weight:700; color:#5e4c46; }
+    .workspace-bar-track { height:12px; border-radius:999px; background:rgba(32,91,87,0.14); overflow:hidden; }
+    .workspace-bar-track-alt { background:rgba(190,120,72,0.14); }
+    .workspace-bar-fill { height:100%; border-radius:999px; background:linear-gradient(90deg, #2d8177 0%, #5cb7a6 100%); }
+    .workspace-bar-fill-alt { background:linear-gradient(90deg, #c56d42 0%, #e6a26e 100%); }
+    .workspace-bar-value { font-size:.88rem; font-weight:800; color:#2a1b18; white-space:nowrap; }
+</style>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsLoading { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+
+    private int ProductsCount { get; set; }
+    private int ServicesCount { get; set; }
+    private int CustomersCount { get; set; }
+    private int InvoicesCount { get; set; }
+    private int AppointmentsCount { get; set; }
+    private int ExpensesCount { get; set; }
+    private CashierSessionModel? CurrentSession { get; set; }
+    private CashierDailySummaryModel? DailySummary { get; set; }
+
+    private List<InvoiceListItemModel> RecentInvoices { get; set; } = [];
+    private List<CustomerListItemModel> RecentCustomers { get; set; } = [];
+    private List<ServiceListItemModel> TopServices { get; set; } = [];
+    private List<AppointmentListItemModel> UpcomingAppointments { get; set; } = [];
+    private List<BranchExpenseListItemModel> RecentExpenses { get; set; } = [];
+    private List<CashierTopItemModel> TodayTopItems { get; set; } = [];
+    private List<CashierRecentPaymentModel> RecentPayments { get; set; } = [];
+
+    private string NormalizedRole => (SessionState.Role ?? string.Empty).Trim().ToUpperInvariant();
+    private bool IsCashierRole => NormalizedRole == "CASHIER";
+    private bool IsHrRole => NormalizedRole == "HR";
+    private bool IsBranchManagerRole => NormalizedRole == "BRANCH_MANAGER";
+    private bool ShowInvoiceSpotlight => IsCashierRole || IsBranchManagerRole || string.IsNullOrWhiteSpace(NormalizedRole);
+    private bool ShowCustomerSpotlight => IsHrRole || IsBranchManagerRole;
+    private bool ShowServiceSpotlight => IsHrRole || IsBranchManagerRole;
+    private string RoleDisplayName => string.IsNullOrWhiteSpace(SessionState.Role)
+        ? T("Branch User", "مستخدم فرع")
+        : SessionState.Role.Replace("_", " ");
+    private string CurrentBranchTitle => string.IsNullOrWhiteSpace(SessionState.BranchName)
+        ? T("Current branch workspace", "مساحة عمل الفرع الحالية")
+        : SessionState.BranchName;
+    private string CurrentBranchDescription => string.IsNullOrWhiteSpace(SessionState.BranchId)
+        ? T("The current workspace follows the signed-in branch role and shows only the areas this user can operate.", "مساحة العمل الحالية تتبع دور الفرع للمستخدم المسجل وتعرض فقط الأقسام التي يستطيع استخدامها.")
+        : UiLanguage.IsArabic
+            ? $"هذه المساحة مخصصة لفرع واحد وتُكيّف الاختصارات والمؤشرات حسب دور {RoleDisplayName}."
+            : $"This workspace is scoped to one branch and adapts the shortcuts and metrics to the {RoleDisplayName.ToLowerInvariant()} role.";
+    private string BranchIdDisplay => string.IsNullOrWhiteSpace(SessionState.BranchId)
+        ? "Not set"
+        : SessionState.BranchId.Length > 8
+            ? SessionState.BranchId[..8].ToUpperInvariant()
+            : SessionState.BranchId.ToUpperInvariant();
+    private string PrimaryTargetLabel => IsCashierRole
+        ? "Sales and drawer"
+        : IsHrRole
+            ? "Customers and services"
+            : IsBranchManagerRole
+                ? "Full branch oversight"
+                : "General branch work";
+    private string PrimaryTargetDescription => IsCashierRole
+        ? "Fast invoice creation and cashier-session tracking matter most in this shift."
+        : IsHrRole
+            ? "Keep customer records and visible services accurate for the branch team."
+            : IsBranchManagerRole
+                ? "Monitor sales, customers, services, and the cashier state from one view."
+                : "Use the quick actions below to move into the right area.";
+    private int AvailableAreasCount =>
+        (SessionState.CanAccessCatalog ? 1 : 0) +
+        (SessionState.CanAccessServices ? 1 : 0) +
+        (SessionState.CanAccessCustomers ? 1 : 0) +
+        (SessionState.CanAccessEmployees ? 1 : 0) +
+        (SessionState.CanAccessCashier ? 1 : 0) +
+        (SessionState.CanAccessInvoices ? 1 : 0);
+    private string AvailableAreasSummary => string.Join(", ", GetAvailableAreas());
+    private string WorkspaceTitle => IsCashierRole
+        ? T("Cashier Workspace", "مساحة الكاشير")
+        : IsHrRole
+            ? T("HR Workspace", "مساحة الموارد البشرية")
+            : IsBranchManagerRole
+                ? T("Branch Manager Workspace", "مساحة مدير الفرع")
+                : T("Workspace", "مساحة العمل");
+    private string WorkspaceDescription => IsCashierRole
+        ? T("Focus on the live drawer, fast invoice flow, and payment follow-up for the branch.", "ركّز على الدرج المباشر وسرعة الفواتير ومتابعة الدفعات داخل الفرع.")
+        : IsHrRole
+            ? T("Focus on customer records, service visibility, and branch support tasks.", "ركّز على ملفات العملاء ووضوح الخدمات ومهام دعم الفرع.")
+            : IsBranchManagerRole
+                ? T("See branch activity across sales, customers, services, and cashier operations from one place.", "شاهد نشاط الفرع عبر المبيعات والعملاء والخدمات وعمليات الكاشير من مكان واحد.")
+                : T("See the branch status at a glance, then jump straight into sales, customers, products, or cashier tasks.", "شاهد حالة الفرع بسرعة ثم انتقل مباشرة إلى المبيعات أو العملاء أو المنتجات أو مهام الكاشير.");
+    private string PrimaryFocusTitle => IsCashierRole
+        ? "Your fastest path is sales and cash handling"
+        : IsHrRole
+            ? "Your focus is customer care and service readiness"
+            : IsBranchManagerRole
+                ? "Your focus is branch oversight and team readiness"
+                : "Your focus depends on the shift needs";
+    private string PrimaryFocusDescription => IsCashierRole
+        ? "Open the drawer, create invoices quickly, and keep an eye on invoices that still need payment follow-up."
+        : IsHrRole
+            ? "Review customer activity, keep service information clean, and support the branch with updated client records."
+            : IsBranchManagerRole
+                ? "Monitor the branch operation at a glance, then jump into the area that needs attention first."
+                : "Use the role cards below to move quickly into the most relevant area for today.";
+    private IReadOnlyList<WorkspaceActionItem> FocusCards => BuildFocusCards();
+    private IReadOnlyList<WorkspaceActionItem> QuickActions => BuildQuickActions();
+    private string DailySummaryDateLabel => DailySummary is null ? "-" : DailySummary.BusinessDateUtc.ToString("yyyy-MM-dd");
+    private string DailyInvoiceCountLabel => DailySummary?.InvoiceCount.ToString() ?? "0";
+    private string DailyPostedCountLabel => DailySummary?.PostedInvoiceCount.ToString() ?? "0";
+    private string DailyPaidCountLabel => DailySummary?.PaidInvoiceCount.ToString() ?? "0";
+    private string DailyCustomerCountLabel => DailySummary?.ActiveCustomerCount.ToString() ?? "0";
+    private string DailyGrossSalesLabel => DailySummary is null ? "0 AED" : FormatMoney(DailySummary.GrossSalesCents);
+    private string DailyCollectedLabel => DailySummary is null ? "0 AED" : FormatMoney(DailySummary.CollectedCents);
+    private string DailyRemainingLabel => DailySummary is null ? "0 AED" : FormatMoney(DailySummary.RemainingCents);
+    private string TopProductsCountLabel => DailySummary?.TopProducts.Count.ToString() ?? "0";
+    private string TopServicesCountLabel => DailySummary?.TopServices.Count.ToString() ?? "0";
+    private string RecentPaymentsCountLabel => DailySummary?.RecentPayments.Count.ToString() ?? "0";
+    private string NextAppointmentLabel => UpcomingAppointments.Count == 0
+        ? "No visits"
+        : UpcomingAppointments[0].StartAt.ToLocalTime().ToString("HH:mm");
+    private string LatestExpenseLabel => RecentExpenses.Count == 0
+        ? "No costs"
+        : FormatMoney(RecentExpenses[0].Amount, RecentExpenses[0].CurrencyCode);
+    private IReadOnlyList<WorkspaceBarItem> TopSellerBars => BuildTopSellerBars();
+    private IReadOnlyList<WorkspaceBarItem> PaymentMethodBars => BuildPaymentMethodBars();
+
+    private string CashierStateLabel => CurrentSession is null ? "Not Opened" : CurrentSession.IsClosed ? "Closed" : "Open";
+    private string CashierStateNote => CurrentSession is null
+        ? "Start the branch cashier session before collecting payments."
+        : CurrentSession.IsClosed
+            ? "The latest drawer session is already closed."
+            : $"Expected cash: {FormatMoney(CurrentSession.ExpectedCashCents)}";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+        try
+        {
+            await SessionState.InitializeAsync();
+
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            if (SessionState.IsTenantAdmin)
+            {
+                NavigationManager.NavigateTo("/tenant-admin");
+                return;
+            }
+
+            await LoadWorkspaceAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadWorkspaceAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+
+        try
+        {
+            var products = await ProductsApiClient.GetProductsAsync(SessionState, null, 1, 8);
+            var services = await ServicesApiClient.GetServicesAsync(SessionState, null, 1, 8);
+            var customers = await CustomersApiClient.GetCustomersAsync(SessionState, null, 1, 8);
+            var invoices = await InvoicesApiClient.GetInvoicesAsync(SessionState, null, null, 1, 6);
+            var appointments = new PagedResultModel<AppointmentListItemModel>();
+            var expenses = new PagedResultModel<BranchExpenseListItemModel>();
+
+            ProductsCount = products.Total;
+            ServicesCount = services.Total;
+            CustomersCount = customers.Total;
+            InvoicesCount = invoices.Total;
+            RecentInvoices = invoices.Items.ToList();
+            RecentCustomers = customers.Items
+                .OrderByDescending(x => x.LastInvoiceAt ?? x.CreatedAt)
+                .Take(4)
+                .ToList();
+            TopServices = services.Items
+                .Where(x => x.IsActive)
+                .OrderByDescending(x => x.Price)
+                .ThenBy(x => GetServiceDisplayName(x))
+                .Take(4)
+                .ToList();
+            if (SessionState.CanAccessAppointments)
+            {
+                try
+                {
+                    appointments = await AppointmentsApiClient.GetAppointmentsAsync(SessionState, null, null, null, null, 1, 6);
+                    AppointmentsCount = appointments.Total;
+                    UpcomingAppointments = appointments.Items
+                        .OrderBy(x => x.StartAt)
+                        .Take(4)
+                        .ToList();
+                }
+                catch
+                {
+                    AppointmentsCount = 0;
+                    UpcomingAppointments = [];
+                }
+            }
+            else
+            {
+                AppointmentsCount = 0;
+                UpcomingAppointments = [];
+            }
+
+            if (SessionState.CanAccessExpenses)
+            {
+                try
+                {
+                    expenses = await ExpensesApiClient.GetExpensesAsync(SessionState, null, null, 1, 6);
+                    ExpensesCount = expenses.Total;
+                    RecentExpenses = expenses.Items
+                        .OrderByDescending(x => x.ExpenseDate)
+                        .ThenByDescending(x => x.CreatedAt)
+                        .Take(4)
+                        .ToList();
+                }
+                catch
+                {
+                    ExpensesCount = 0;
+                    RecentExpenses = [];
+                }
+            }
+            else
+            {
+                ExpensesCount = 0;
+                RecentExpenses = [];
+            }
+
+            try
+            {
+                CurrentSession = await CashierApiClient.GetCurrentSessionAsync(SessionState);
+                DailySummary = await CashierApiClient.GetDailySummaryAsync(SessionState);
+                TodayTopItems = (DailySummary.TopProducts.Concat(DailySummary.TopServices))
+                    .OrderByDescending(x => x.TotalCents)
+                    .ThenByDescending(x => x.Quantity)
+                    .Take(6)
+                    .ToList();
+                RecentPayments = DailySummary.RecentPayments.ToList();
+            }
+            catch
+            {
+                CurrentSession = null;
+                DailySummary = null;
+                TodayTopItems = [];
+                RecentPayments = [];
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            ProductsCount = 0;
+            ServicesCount = 0;
+            CustomersCount = 0;
+            InvoicesCount = 0;
+            AppointmentsCount = 0;
+            ExpensesCount = 0;
+            RecentInvoices = [];
+            RecentCustomers = [];
+            TopServices = [];
+            UpcomingAppointments = [];
+            RecentExpenses = [];
+            CurrentSession = null;
+            DailySummary = null;
+            TodayTopItems = [];
+            RecentPayments = [];
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task RefreshWorkspaceAsync()
+    {
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+        await LoadWorkspaceAsync();
+
+        if (string.IsNullOrWhiteSpace(ErrorMessage))
+            FlashMessage = "Workspace refreshed successfully.";
+    }
+
+    private static string FormatMoney(decimal amount) => $"{amount:0.##} AED";
+
+    private static string FormatMoney(decimal amount, string? currencyCode)
+        => $"{amount:0.##} {NormalizeCurrency(currencyCode)}";
+
+    private static string FormatMoney(int cents) => $"{cents / 100m:0.##} AED";
+
+    private static string FormatMoney(int cents, string? currencyCode)
+        => $"{cents / 100m:0.##} {NormalizeCurrency(currencyCode)}";
+
+    private static string NormalizeCurrency(string? currencyCode)
+        => string.IsNullOrWhiteSpace(currencyCode) ? "AED" : currencyCode.Trim().ToUpperInvariant();
+
+    private IReadOnlyList<WorkspaceActivityRow> BranchActivityRows
+        => BuildBranchActivityRows();
+
+    private static string MapStatusClass(string? status)
+        => status?.ToUpperInvariant() switch
+        {
+            "PAID" => "active",
+            "PARTIALLYPAID" => "active",
+            "POSTED" => "inactive",
+            "DRAFT" => "inactive",
+            _ => "inactive"
+        };
+
+    private string T(string english, string arabic) => UiLanguage.Text(english, arabic);
+
+    private string MapPaymentMethod(string? method)
+        => method?.Trim().ToUpperInvariant() switch
+        {
+            "CASH" => T("Cash", "نقدي"),
+            "CARD" => T("Card", "بطاقة"),
+            "BANKTRANSFER" => T("Bank Transfer", "تحويل بنكي"),
+            "BANK_TRANSFER" => T("Bank Transfer", "تحويل بنكي"),
+            "ONLINE" => T("Online", "أونلاين"),
+            "WALLET" => T("Wallet", "محفظة"),
+            _ => string.IsNullOrWhiteSpace(method) ? T("Unknown", "غير معروف") : method
+        };
+
+    private IReadOnlyList<WorkspaceActivityRow> BuildBranchActivityRows()
+    {
+        var rows = new List<WorkspaceActivityRow>();
+
+        rows.AddRange(UpcomingAppointments.Select(item => new WorkspaceActivityRow(
+            "Appointment",
+            string.IsNullOrWhiteSpace(item.CustomerName) ? "Walk-in visit" : item.CustomerName,
+            $"{MapAppointmentStatus(item.Status)} | {item.ItemCount} item(s)",
+            item.StartAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))));
+
+        rows.AddRange(RecentExpenses.Select(item => new WorkspaceActivityRow(
+            "Expense",
+            item.Title,
+            $"{item.Category} | {FormatMoney(item.Amount, item.CurrencyCode)} | {MapExpenseStatus(item.Status)}",
+            item.ExpenseDate.ToLocalTime().ToString("yyyy-MM-dd"))));
+
+        return rows
+            .Take(8)
+            .ToList();
+    }
+
+    private static string MapAppointmentStatus(string? status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "scheduled" => "Scheduled",
+            "confirmed" => "Confirmed",
+            "completed" => "Completed",
+            "cancelled" => "Cancelled",
+            "no_show" => "No Show",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private static string MapExpenseStatus(string? status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "draft" => "Draft",
+            "submitted" => "Submitted",
+            "approved" => "Approved",
+            "paid" => "Paid",
+            "cancelled" => "Cancelled",
+            _ => string.IsNullOrWhiteSpace(status) ? "Unknown" : status
+        };
+
+    private IReadOnlyList<WorkspaceActionItem> BuildFocusCards()
+    {
+        if (IsCashierRole)
+        {
+            return
+            [
+                new("POS", "Point of Sale", "Live selling", "Open the branch selling screen and move faster through checkout.", "/pos"),
+                new("DRAWER", "Cashier Session", CashierStateLabel, "Keep the branch drawer under control during the shift.", "/cashier"),
+                new("SALE", "Create Invoice", "Start sale", "Move directly into a new invoice without extra steps.", "/invoices/create"),
+                new("FOLLOW UP", "Recent Invoices", $"{InvoicesCount} invoices", "Check balances and payment progress quickly.", "/invoices")
+            ];
+        }
+
+        if (IsHrRole)
+        {
+            return
+            [
+                new("TEAM", "Employees", "Attendance", "Manage staff files, attendance, shifts, and leave records.", "/employees"),
+                new("BOOK", "Appointments", "Schedule board", "Follow planned visits and support the front desk workflow.", "/appointments"),
+                new("CRM", "Customers", $"{CustomersCount} records", "Review active customers and recent branch activity.", "/customers"),
+                new("SERVICE", "Services", $"{ServicesCount} visible", "Make sure service information is ready and current.", "/services"),
+                new("CATALOG", "Products", $"{ProductsCount} visible", "Support the branch with product lookup when needed.", "/products")
+            ];
+        }
+
+        return
+        [
+            new("TEAM", "Employees", "Attendance", "Manage staff files, attendance, shifts, and leave records.", "/employees"),
+            new("POS", "Point of Sale", "Live selling", "Open the branch selling screen and move faster through checkout.", "/pos"),
+            new("DRAWER", "Cashier Session", CashierStateLabel, "Check whether the drawer is open and what cash is expected.", "/cashier"),
+            new("CRM", "Customers", $"{CustomersCount} records", "Review customer activity and branch relationship history.", "/customers"),
+            new("SALE", "Invoices", $"{InvoicesCount} invoices", "Monitor live sales and outstanding payment activity.", "/invoices")
+        ];
+    }
+
+    private IReadOnlyList<WorkspaceActionItem> BuildQuickActions()
+    {
+        if (IsCashierRole)
+        {
+            return
+            [
+                new("POS", "Point of Sale", "Open", "Launch the branch point-of-sale workflow.", "/pos"),
+                new("DRAWER", "Cashier Session", CashierStateLabel, "Open, review, or close the branch drawer.", "/cashier"),
+                new("SALE", "Create Invoice", "Start sale", "Create a new invoice with products and services.", "/invoices/create"),
+                new("FOLLOW UP", "Review Invoices", $"{InvoicesCount}", "Track payment status and recent branch invoices.", "/invoices"),
+                new("CATALOG", "Products", $"{ProductsCount}", "Browse ready-to-sell products during checkout.", "/products")
+            ];
+        }
+
+        if (IsHrRole)
+        {
+            return
+            [
+                new("TEAM", "Employees", "Open", "Track attendance, shifts, leave, and staff documents.", "/employees"),
+                new("BOOK", "Appointments", "Open", "Review scheduled visits and branch calendar readiness.", "/appointments"),
+                new("CRM", "Customers", $"{CustomersCount}", "Open customer records and add new walk-ins.", "/customers"),
+                new("SERVICE", "Services", $"{ServicesCount}", "Review service offerings and visible branch services.", "/services"),
+                new("COST", "Expenses", "Open", "Track branch expense entries and operating notes.", "/expenses"),
+                new("FOLLOW UP", "Review Invoices", $"{InvoicesCount}", "See recent invoice activity tied to branch clients.", "/invoices"),
+                new("CATALOG", "Products", $"{ProductsCount}", "Support the branch with product lookup and visibility.", "/products")
+            ];
+        }
+
+        return
+        [
+            new("TEAM", "Employees", "Open", "Track attendance, shifts, leave, and staff documents.", "/employees"),
+            new("POS", "Point of Sale", "Open", "Launch the branch point-of-sale workflow.", "/pos"),
+            new("DRAWER", "Cashier Session", CashierStateLabel, "Open, review, or close the branch drawer.", "/cashier"),
+            new("SALE", "Create Invoice", "Start sale", "Create a new invoice with products and services.", "/invoices/create"),
+            new("FOLLOW UP", "Review Invoices", $"{InvoicesCount}", "Track payment status and recent branch invoices.", "/invoices"),
+            new("CRM", "Customers", $"{CustomersCount}", "Open customer records and add new walk-ins.", "/customers"),
+            new("BOOK", "Appointments", "Open", "Review scheduled visits and branch calendar readiness.", "/appointments"),
+            new("COST", "Expenses", "Open", "Track branch expense entries and operating notes.", "/expenses")
+        ];
+    }
+
+    private static string GetServiceDisplayName(ServiceListItemModel service)
+        => !string.IsNullOrWhiteSpace(service.NameEn)
+            ? service.NameEn
+            : !string.IsNullOrWhiteSpace(service.NameAr)
+                ? service.NameAr
+                : "Unnamed service";
+
+    private IEnumerable<string> GetAvailableAreas()
+    {
+        if (SessionState.CanAccessCatalog)
+            yield return "Products";
+
+        if (SessionState.CanAccessServices)
+            yield return "Services";
+
+        if (SessionState.CanAccessCustomers)
+            yield return "Customers";
+
+        if (SessionState.CanAccessCashier)
+            yield return "Cashier";
+
+        if (SessionState.CanAccessInvoices)
+            yield return "Invoices";
+
+        if (SessionState.CanAccessEmployees)
+            yield return "Employees";
+    }
+
+    private IReadOnlyList<WorkspaceBarItem> BuildTopSellerBars()
+    {
+        var items = TodayTopItems.Take(6).ToList();
+        var maxValue = items.Count == 0 ? 0 : items.Max(item => item.TotalCents);
+        return items
+            .Select(item => new WorkspaceBarItem(
+                item.Name,
+                maxValue <= 0 ? "0%" : $"{Math.Max(8, Math.Round((item.TotalCents / (double)maxValue) * 100d, 0))}%",
+                FormatMoney(item.TotalCents, item.CurrencyCode)))
+            .ToList();
+    }
+
+    private IReadOnlyList<WorkspaceBarItem> BuildPaymentMethodBars()
+    {
+        var groups = RecentPayments
+            .GroupBy(payment => MapPaymentMethod(payment.Method))
+            .Select(group => new
+            {
+                Label = group.Key,
+                AmountCents = group.Sum(item => item.AmountCents)
+            })
+            .OrderByDescending(group => group.AmountCents)
+            .ToList();
+
+        var maxValue = groups.Count == 0 ? 0 : groups.Max(item => item.AmountCents);
+        return groups
+            .Select(group => new WorkspaceBarItem(
+                group.Label,
+                maxValue <= 0 ? "0%" : $"{Math.Max(8, Math.Round((group.AmountCents / (double)maxValue) * 100d, 0))}%",
+                FormatMoney(group.AmountCents)))
+            .ToList();
+    }
+
+    private sealed record WorkspaceActionItem(
+        string Badge,
+        string Title,
+        string Value,
+        string Description,
+        string Href);
+
+    private sealed record WorkspaceActivityRow(
+        string Type,
+        string Primary,
+        string Details,
+        string WhenLabel);
+
+    private sealed record WorkspaceBarItem(
+        string Label,
+        string Width,
+        string Value);
+}

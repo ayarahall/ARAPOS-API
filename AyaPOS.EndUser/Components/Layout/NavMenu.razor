@@ -1,0 +1,48 @@
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Ayapos.EndUser</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="workspace">
+                <span class="bi bi-grid-fill-nav-menu" aria-hidden="true"></span> Workspace
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="pos">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> POS
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="appointments">
+                <span class="bi bi-calendar-event-fill-nav-menu" aria-hidden="true"></span> Appointments
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="customers">
+                <span class="bi bi-people-fill-nav-menu" aria-hidden="true"></span> Customers
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="cashier">
+                <span class="bi bi-receipt-cutoff-nav-menu" aria-hidden="true"></span> Cashier
+            </NavLink>
+        </div>
+    </nav>
+</div>
+

@@ -1,0 +1,489 @@
+@page "/invoices/{InvoiceId:guid}"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Invoices
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Invoices
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject InvoicesApiClient InvoicesApiClient
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Invoice Details</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="Invoice Details" Description="Review invoice lines, inspect payment history, and record a payment when the invoice is ready to settle." SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="invoices" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Invoice Context</span>
+                <h2>@InvoiceContextTitle</h2>
+            </div>
+            <p>@InvoiceContextDescription</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="ghost-button" @onclick="ReloadAsync" disabled="@IsBusy">Refresh Invoice</button>
+            <button class="ghost-button" @onclick="OpenReceiptPreviewModal" disabled="@(IsBusy || Invoice is null)">Show Receipt</button>
+            <button class="ghost-button" @onclick="PrintReceiptAsync" disabled="@(IsBusy || Invoice is null)">Print Receipt</button>
+            <a class="ghost-button action-link" href="/invoices">Back to Invoices</a>
+        </div>
+    </section>
+
+    @if (Invoice is null)
+    {
+        <div class="placeholder-panel" style="margin-top:20px;">Loading invoice...</div>
+    }
+    else
+    {
+        <section class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Invoice Code</span>
+                <strong class="metric-value">@Invoice.InvoiceCode</strong>
+                <span class="metric-note">Created at @Invoice.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Customer</span>
+                <strong class="metric-value">@(string.IsNullOrWhiteSpace(Invoice.CustomerName) ? "Walk-in" : Invoice.CustomerName)</strong>
+                <span class="metric-note">Customer attached to this invoice.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Status</span>
+                <strong class="metric-value">@Invoice.Status</strong>
+                <span class="metric-note">Current lifecycle state of the invoice.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Remaining</span>
+                <strong class="metric-value">@FormatMoney(Invoice.Remaining)</strong>
+                <span class="metric-note">Balance still waiting to be collected.</span>
+            </article>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Invoice Summary</span>
+                    <h2>Totals and line review</h2>
+                </div>
+                <p>Check the invoice lines and totals before adding more payments or moving the customer forward.</p>
+            </div>
+
+            <div class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">Subtotal</span>
+                    <strong class="metric-value">@FormatMoney(Invoice.Subtotal)</strong>
+                    <span class="metric-note">Current subtotal from all invoice lines.</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">Total</span>
+                    <strong class="metric-value">@FormatMoney(Invoice.Total)</strong>
+                    <span class="metric-note">Full invoice amount after all lines were added.</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">Paid</span>
+                    <strong class="metric-value">@FormatMoney(Invoice.TotalPaid)</strong>
+                    <span class="metric-note">Payments already collected against this invoice.</span>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">Invoice Lines</span>
+                    <strong class="metric-value">@Invoice.Items.Count</strong>
+                    <span class="metric-note">Each item below contributes to the current total.</span>
+                </article>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Qty</th>
+                        <th>Unit Price</th>
+                        <th>Line Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Invoice.Items)
+                    {
+                        <tr>
+                            <td>@item.ItemType</td>
+                            <td><div class="table-primary-cell">@item.Name</div></td>
+                            <td>@item.Qty</td>
+                            <td>@FormatMoney(item.UnitPrice)</td>
+                            <td>@FormatMoney(item.LineTotal)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Payments</span>
+                    <h2>Recorded payment history</h2>
+                </div>
+                <p>Every registered payment appears here so the branch can audit collected amounts quickly.</p>
+            </div>
+
+            @if (Invoice.Payments.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">No payments have been recorded for this invoice yet.</div>
+            }
+            else
+            {
+                <table class="products-table" style="margin-top:18px;">
+                    <thead>
+                        <tr>
+                            <th>Method</th>
+                            <th>Amount</th>
+                            <th>Reference</th>
+                            <th>Paid At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var payment in Invoice.Payments)
+                        {
+                            <tr>
+                                <td>@MapPaymentMethodLabel(payment.Method)</td>
+                                <td>@FormatMoney(payment.Amount)</td>
+                                <td>@(string.IsNullOrWhiteSpace(payment.Reference) ? "-" : payment.Reference)</td>
+                                <td>@payment.PaidAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @if (Invoice.Status is "Posted" or "PartiallyPaid")
+        {
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">Collect Payment</span>
+                        <h2>Record the next payment</h2>
+                    </div>
+                    <p>Use this section when the customer is paying now and the invoice still has an outstanding balance.</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="paymentMethod">Payment Method</label>
+                        <select id="paymentMethod" class="form-input" @bind="PaymentMethod">
+                            <option value="1">Cash</option>
+                            <option value="2">Card</option>
+                            <option value="3">Bank Transfer</option>
+                            <option value="4">Online</option>
+                            <option value="5">Wallet</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="paymentAmount">Amount</label>
+                        <input id="paymentAmount" class="form-input" type="number" step="0.01" min="0.01" @bind="PaymentAmount" />
+                    </div>
+
+                    <div class="field">
+                        <label for="paymentReference">Reference</label>
+                        <input id="paymentReference" class="form-input" @bind="PaymentReference" placeholder="Optional payment reference" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="AddPaymentAsync" disabled="@IsBusy">Record Payment</button>
+                    <button class="ghost-button" @onclick="SetFullRemainingPayment" disabled="@IsBusy">Use Full Remaining</button>
+                    <button class="ghost-button" @onclick="SetHalfRemainingPayment" disabled="@IsBusy">Use Half Remaining</button>
+                    <button class="ghost-button" @onclick="ReloadAsync" disabled="@IsBusy">Refresh</button>
+                </div>
+            </section>
+        }
+
+    }
+
+    <ActionModal Visible="@(ShowReceiptPreviewModal && Invoice is not null)"
+                 Eyebrow="Receipt Preview"
+                 Title="Customer invoice print view"
+                 Description="Review the printed customer receipt in a focused popup, then print when ready."
+                 OnClose="CloseReceiptPreviewModal">
+        @if (Invoice is not null)
+        {
+            <div class="receipt-paper">
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.CompanyLogoUrl))
+                {
+                    <img class="receipt-logo" src="@Invoice.PrintSettings.CompanyLogoUrl" alt="Company logo" />
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.CompanyName))
+                {
+                    <div class="receipt-company">@Invoice.PrintSettings.CompanyName</div>
+                }
+
+                <div class="receipt-title">@Invoice.PrintSettings.ReceiptTitle</div>
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.CompanyPhone))
+                {
+                    <div class="receipt-line receipt-center"><strong>Phone:</strong> @Invoice.PrintSettings.CompanyPhone</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.CompanyAddress))
+                {
+                    <div class="receipt-line receipt-center">@Invoice.PrintSettings.CompanyAddress</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.CompanyTaxNumber))
+                {
+                    <div class="receipt-line receipt-center"><strong>Tax No:</strong> @Invoice.PrintSettings.CompanyTaxNumber</div>
+                }
+
+                @if (Invoice.PrintSettings.ShowBranchNameOnReceipt)
+                {
+                    <div class="receipt-line"><strong>Branch:</strong> @(string.IsNullOrWhiteSpace(SessionState.BranchName) ? "Current Branch" : SessionState.BranchName)</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.ReceiptHeaderLine1))
+                {
+                    <div class="receipt-line">@Invoice.PrintSettings.ReceiptHeaderLine1</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.ReceiptHeaderLine2))
+                {
+                    <div class="receipt-line">@Invoice.PrintSettings.ReceiptHeaderLine2</div>
+                }
+
+                <div class="receipt-divider"></div>
+                <div class="receipt-line"><strong>Invoice:</strong> @Invoice.InvoiceCode</div>
+                <div class="receipt-line"><strong>Date:</strong> @Invoice.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+
+                @if (Invoice.PrintSettings.ShowCustomerNameOnReceipt)
+                {
+                    <div class="receipt-line"><strong>Customer:</strong> @(string.IsNullOrWhiteSpace(Invoice.CustomerName) ? "Walk-in" : Invoice.CustomerName)</div>
+                }
+
+                <div class="receipt-divider"></div>
+
+                @foreach (var item in Invoice.Items)
+                {
+                    <div class="receipt-item-row">
+                        <div>
+                            <strong>@item.Name</strong>
+                            <div class="receipt-line">@item.ItemType x @item.Qty</div>
+                        </div>
+                        <div>@FormatMoney(item.LineTotal)</div>
+                    </div>
+                }
+
+                <div class="receipt-divider"></div>
+                <div class="receipt-item-row"><span>Subtotal</span><strong>@FormatMoney(Invoice.Subtotal)</strong></div>
+                <div class="receipt-item-row"><span>Total</span><strong>@FormatMoney(Invoice.Total)</strong></div>
+                <div class="receipt-item-row"><span>Paid</span><strong>@FormatMoney(Invoice.TotalPaid)</strong></div>
+                <div class="receipt-item-row"><span>Remaining</span><strong>@FormatMoney(Invoice.Remaining)</strong></div>
+
+                @if (Invoice.PrintSettings.ShowPaymentHistoryOnReceipt && Invoice.Payments.Count > 0)
+                {
+                    <div class="receipt-divider"></div>
+                    <div class="receipt-line"><strong>Payments</strong></div>
+
+                    @foreach (var payment in Invoice.Payments)
+                    {
+                        <div class="receipt-item-row">
+                            <span>@MapPaymentMethodLabel(payment.Method)</span>
+                            <strong>@FormatMoney(payment.Amount)</strong>
+                        </div>
+                    }
+                }
+
+                @if (!string.IsNullOrWhiteSpace(Invoice.PrintSettings.ReceiptFooterNote))
+                {
+                    <div class="receipt-divider"></div>
+                    <div class="receipt-footer-note">@Invoice.PrintSettings.ReceiptFooterNote</div>
+                }
+            </div>
+
+            <div class="action-modal-footer">
+                <button class="ghost-button" @onclick="CloseReceiptPreviewModal" disabled="@IsBusy">Close</button>
+                <button class="submit-button" @onclick="PrintReceiptAsync" disabled="@IsBusy">Print Receipt</button>
+            </div>
+        }
+    </ActionModal>
+</div>
+
+@code {
+    [Parameter] public Guid InvoiceId { get; set; }
+
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool ShowReceiptPreviewModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private int PaymentMethod { get; set; } = 1;
+    private decimal PaymentAmount { get; set; }
+    private string PaymentReference { get; set; } = string.Empty;
+    private InvoiceDetailsModel? Invoice { get; set; }
+    private string InvoiceContextTitle => Invoice is null
+        ? "Invoice payment and review workspace"
+        : $"{Invoice.InvoiceCode} review and payment";
+    private string InvoiceContextDescription => Invoice is null
+        ? "Open one invoice, review its lines and payments, then collect the remaining amount when the customer is ready."
+        : $"This invoice belongs to the current branch workflow and stays separate from owner and tenant administration.";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked) return;
+        _sessionChecked = true;
+        try
+        {
+            await SessionState.InitializeAsync();
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+            if (!SessionState.CanAccessInvoices)
+            {
+                NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+                return;
+            }
+            await LoadInvoiceAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadInvoiceAsync()
+    {
+        ErrorMessage = string.Empty;
+        try
+        {
+            Invoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, InvoiceId);
+            PaymentAmount = Invoice.Remaining;
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            await LoadInvoiceAsync();
+            FlashMessage = "Invoice refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task AddPaymentAsync()
+    {
+        if (Invoice is null) return;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        if (PaymentAmount <= 0)
+        {
+            ErrorMessage = "Enter a valid payment amount.";
+            return;
+        }
+        IsBusy = true;
+        try
+        {
+            var cents = (int)Math.Round(PaymentAmount * 100m, MidpointRounding.AwayFromZero);
+            Invoice = await InvoicesApiClient.AddPaymentAsync(SessionState, Invoice.Id, new AddPaymentRequestModel
+            {
+                Method = PaymentMethod,
+                AmountCents = cents,
+                Reference = string.IsNullOrWhiteSpace(PaymentReference) ? null : PaymentReference.Trim()
+            });
+            PaymentAmount = Invoice.Remaining;
+            PaymentReference = string.Empty;
+            FlashMessage = "Payment recorded successfully.";
+
+            if (Invoice.PrintSettings.AutoPrintReceiptAfterPayment)
+                await PrintReceiptAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private void OpenReceiptPreviewModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowReceiptPreviewModal = true;
+    }
+
+    private Task CloseReceiptPreviewModal()
+    {
+        ShowReceiptPreviewModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void SetFullRemainingPayment()
+    {
+        if (Invoice is null)
+            return;
+
+        PaymentAmount = Invoice.Remaining;
+        FlashMessage = "Payment amount set to the full remaining balance.";
+        ErrorMessage = string.Empty;
+    }
+
+    private void SetHalfRemainingPayment()
+    {
+        if (Invoice is null)
+            return;
+
+        PaymentAmount = Math.Round(Invoice.Remaining / 2m, 2, MidpointRounding.AwayFromZero);
+        FlashMessage = "Payment amount set to half of the remaining balance.";
+        ErrorMessage = string.Empty;
+    }
+
+    private async Task PrintReceiptAsync()
+        => await JSRuntime.InvokeVoidAsync("ayaposPrint.printCurrentPage");
+
+    private static string FormatMoney(decimal amount) => $"{amount:0.##} AED";
+
+    private static string MapPaymentMethodLabel(string? method)
+        => method?.Trim() switch
+        {
+            "1" => "Cash",
+            "2" => "Card",
+            "3" => "Bank Transfer",
+            "4" => "Online",
+            "5" => "Wallet",
+            "Cash" => "Cash",
+            "Card" => "Card",
+            "BankTransfer" => "Bank Transfer",
+            "Online" => "Online",
+            "Wallet" => "Wallet",
+            _ => string.IsNullOrWhiteSpace(method) ? "-" : method
+        };
+}

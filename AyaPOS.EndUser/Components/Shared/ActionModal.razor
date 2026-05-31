@@ -1,0 +1,143 @@
+@if (Visible)
+{
+    <div class="action-modal-overlay" @onclick="HandleOverlayClick">
+        <div class="action-modal-card" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="actionModalTitle">
+            <div class="action-modal-header">
+                <div>
+                    <div class="action-modal-eyebrow">@Eyebrow</div>
+                    <h2 id="actionModalTitle">@Title</h2>
+                    @if (!string.IsNullOrWhiteSpace(Description))
+                    {
+                        <p>@Description</p>
+                    }
+                </div>
+                <button type="button" class="action-modal-close" @onclick="OnClose">X</button>
+            </div>
+
+            <div class="action-modal-body">
+                @ChildContent
+            </div>
+
+            @if (FooterContent is not null)
+            {
+                <div class="action-modal-footer">
+                    @FooterContent
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .action-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(27, 42, 36, 0.34);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 1200;
+    }
+
+    .action-modal-card {
+        width: min(920px, 100%);
+        max-height: calc(100vh - 48px);
+        overflow: auto;
+        border-radius: 30px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(246,252,249,0.98) 100%);
+        box-shadow: 0 28px 80px rgba(34, 74, 63, 0.18);
+        padding: 28px;
+    }
+
+    .action-modal-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        margin-bottom: 18px;
+    }
+
+    .action-modal-header h2 {
+        margin: 8px 0 0;
+        color: #241814;
+        font-size: clamp(1.7rem, 2vw, 2.3rem);
+    }
+
+    .action-modal-header p {
+        margin: 10px 0 0;
+        color: #6b9489;
+        line-height: 1.6;
+    }
+
+    .action-modal-eyebrow {
+        display: inline-flex;
+        padding: 8px 14px;
+        border-radius: 999px;
+        background: #e4f2ec;
+        color: #5f9e8f;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        font-size: .78rem;
+    }
+
+    .action-modal-close {
+        border: 0;
+        background: rgba(228, 242, 236, 0.96);
+        color: #5f9e8f;
+        border-radius: 14px;
+        width: 42px;
+        height: 42px;
+        font-size: 1.1rem;
+        font-weight: 800;
+        cursor: pointer;
+        flex: 0 0 auto;
+    }
+
+    .action-modal-body {
+        display: grid;
+        gap: 18px;
+    }
+
+    .action-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 22px;
+        flex-wrap: wrap;
+    }
+
+    @@media (max-width: 720px) {
+        .action-modal-overlay { padding: 12px; }
+        .action-modal-card { padding: 20px; border-radius: 24px; }
+        .action-modal-header { flex-direction: column; }
+    }
+</style>
+
+@code {
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public string Eyebrow { get; set; } = "Action";
+
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Description { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public RenderFragment? FooterContent { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private Task HandleOverlayClick()
+        => OnClose.InvokeAsync();
+}

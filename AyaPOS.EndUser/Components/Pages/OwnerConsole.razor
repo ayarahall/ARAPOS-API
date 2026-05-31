@@ -1,0 +1,1460 @@
+@page "/owner"
+@page "/owner-console"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Owner
+@using Ayapos.EndUser.Services.Owner
+@inject NavigationManager NavigationManager
+@inject PlatformAdminApiClient PlatformAdminApiClient
+@inject OwnerSessionState OwnerSessionState
+
+<PageTitle>Owner Console</PageTitle>
+
+<div class="products-page">
+    <header class="products-header">
+        <div>
+            <span class="eyebrow">Owner Console</span>
+            <h1>Platform access, tenant licensing, branches, and branch users</h1>
+            <p>Manage tenant plans, branches, and lower-access branch users from one owner-level workspace.</p>
+        </div>
+
+        <UserAccessCard ScopeLabel="Platform Owner"
+                        UserName="@(OwnerSessionState.IsAuthenticated ? OwnerSessionState.Username : "Not signed in")"
+                        RoleLabel="Owner"
+                        OnLogout="@(OwnerSessionState.IsAuthenticated ? EventCallback.Factory.Create(this, OwnerSignOutAsync) : default)" />
+    </header>
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    @if (!OwnerSessionState.IsAuthenticated)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Owner Login</span>
+                    <h2>Sign in as platform owner</h2>
+                </div>
+                <p>This area is only for the top access level that can create tenants and control tenant seats and licenses.</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="ownerUsername">Username</label>
+                    <input id="ownerUsername" class="form-input" @bind="LoginModel.Username" />
+                </div>
+
+                <div class="field">
+                    <label for="ownerPassword">Password</label>
+                    <input id="ownerPassword" class="form-input" type="password" @bind="LoginModel.Password" />
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="OwnerLoginAsync" disabled="@IsBusy">@(IsBusy ? "Signing in..." : "Owner Sign In")</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Platform Owners</span>
+                <strong class="metric-value">@PlatformOwners.Count</strong>
+                <span class="metric-note">Owner accounts control the platform and are not tied to tenant license periods.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Tenants</span>
+                <strong class="metric-value">@Tenants.Count</strong>
+                <span class="metric-note">Total tenants loaded into the owner console.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Licensed Seats</span>
+                <strong class="metric-value">@Tenants.Sum(x => x.MaxUsers)</strong>
+                <span class="metric-note">Total seats assigned across all tenants.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Assigned Users</span>
+                <strong class="metric-value">@Tenants.Sum(x => x.AssignedUsers)</strong>
+                <span class="metric-note">Users already created under the existing tenants.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Access Levels</span>
+                <strong class="metric-value">Owner / Tenant / Branch</strong>
+                <span class="metric-note">Branch users like Cashier, HR, and Branch Manager now sit below the tenant level.</span>
+            </article>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Platform Owners</span>
+                    <h2>Create and manage owner accounts</h2>
+                </div>
+                <p>Owner accounts sit above tenant licensing. They manage the platform itself, so they do not carry monthly or yearly user licenses.</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="platformOwnerUsername">Username</label>
+                    <input id="platformOwnerUsername" class="form-input" @bind="CreatePlatformOwnerModel.Username" />
+                </div>
+
+                <div class="field">
+                    <label for="platformOwnerPassword">Password</label>
+                    <input id="platformOwnerPassword" class="form-input" type="password" @bind="CreatePlatformOwnerModel.Password" />
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="CreatePlatformOwnerAsync" disabled="@IsBusy">Create Owner</button>
+                <button class="ghost-button" @onclick="RefreshOwnersAsync" disabled="@IsBusy">Refresh Owners</button>
+            </div>
+
+            <div class="products-table-wrap" style="margin-top:20px;">
+                @if (PlatformOwners.Count == 0)
+                {
+                    <div class="placeholder-panel">No additional owner accounts loaded yet.</div>
+                }
+                else
+                {
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>Owner</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Toggle</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var owner in PlatformOwners)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="table-primary-cell">@owner.Username</div>
+                                        <div class="table-secondary-cell">@owner.Id.ToString()[..8].ToUpperInvariant()</div>
+                                    </td>
+                                    <td>@(owner.IsActive ? "Active" : "Inactive")</td>
+                                    <td>@owner.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        <button class="ghost-button" @onclick="() => TogglePlatformOwnerAsync(owner)">@(owner.IsActive ? "Deactivate" : "Activate")</button>
+                                    </td>
+                                    <td>
+                                        <button class="ghost-button" @onclick="() => SelectPlatformOwner(owner)">Manage Owner</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </section>
+
+        @if (SelectedPlatformOwner is not null)
+        {
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">Selected Owner</span>
+                        <h2>@SelectedPlatformOwner.Username</h2>
+                    </div>
+                    <p>Reset the password for this owner account without touching any tenant-level license logic.</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="platformOwnerPasswordReset">New Password</label>
+                        <input id="platformOwnerPasswordReset" class="form-input" type="password" @bind="PlatformOwnerPasswordModel.NewPassword" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="SetPlatformOwnerPasswordAsync" disabled="@IsBusy">Reset Owner Password</button>
+                </div>
+            </section>
+        }
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Create Tenant</span>
+                    <h2>Add a tenant with plan and seat count</h2>
+                </div>
+                <p>Each tenant gets its own plan type and maximum allowed users. Tenant users also receive their own individual licenses.</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="tenantName">Tenant Name</label>
+                    <input id="tenantName" class="form-input" @bind="CreateTenantModel.Name" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantSlug">Tenant Slug</label>
+                    <input id="tenantSlug" class="form-input" @bind="CreateTenantModel.Slug" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantPlan">License Plan</label>
+                    <select id="tenantPlan" class="form-input" @bind="CreateTenantModel.LicensePlan">
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="YEARLY">Yearly</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="tenantSeats">Max Users</label>
+                    <input id="tenantSeats" class="form-input" type="number" min="1" @bind="CreateTenantModel.MaxUsers" />
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="CreateTenantAsync" disabled="@IsBusy">@(IsBusy ? "Saving..." : "Create Tenant")</button>
+                    <button class="ghost-button" @onclick="RefreshTenantsAsync" disabled="@IsBusy">Refresh Tenants</button>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            @if (Tenants.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">No tenants loaded yet.</div>
+            }
+            else
+            {
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>Tenant</th>
+                            <th>Plan</th>
+                            <th>License Status</th>
+                            <th>Seats</th>
+                            <th>Assigned Users</th>
+                            <th>Expires</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var tenant in Tenants)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="table-primary-cell">@tenant.Name</div>
+                                    <div class="table-secondary-cell">@tenant.Slug</div>
+                                </td>
+                                <td>@tenant.LicensePlan</td>
+                                <td>@tenant.LicenseStatus</td>
+                                <td>@tenant.MaxUsers</td>
+                                <td>@tenant.AssignedUsers</td>
+                                <td>@tenant.LicenseExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    <button class="ghost-button" @onclick="() => SelectTenantAsync(tenant)">Manage</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @if (SelectedTenant is not null)
+        {
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">Selected Tenant</span>
+                        <h2>@SelectedTenant.Name</h2>
+                    </div>
+                    <p>Update the tenant plan, seat count, and tenant users from this panel.</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="selectedPlan">License Plan</label>
+                        <select id="selectedPlan" class="form-input" @bind="UpdateTenantLicenseModel.LicensePlan">
+                            <option value="MONTHLY">Monthly</option>
+                            <option value="YEARLY">Yearly</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedSeats">Max Users</label>
+                        <input id="selectedSeats" class="form-input" type="number" min="1" @bind="UpdateTenantLicenseModel.MaxUsers" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="UpdateTenantLicenseAsync" disabled="@IsBusy">Update Tenant License</button>
+                </div>
+            </section>
+
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">Tenant Admins</span>
+                        <h2>Add tenant-level admin user</h2>
+                    </div>
+                    <p>Tenant admins belong to the tenant itself. Branch users like Cashier and HR are created under a branch below.</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="tenantUserName">Username</label>
+                        <input id="tenantUserName" class="form-input" @bind="CreateTenantUserModel.Username" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantUserRole">Role</label>
+                        <select id="tenantUserRole" class="form-input" @bind="CreateTenantUserModel.Role">
+                            <option value="TENANT">Tenant Admin</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantUserPassword">Password</label>
+                        <input id="tenantUserPassword" class="form-input" @bind="CreateTenantUserModel.Password" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantUserPin">PIN</label>
+                        <input id="tenantUserPin" class="form-input" @bind="CreateTenantUserModel.Pin" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantUserPlan">User License Plan</label>
+                        <select id="tenantUserPlan" class="form-input" @bind="CreateTenantUserModel.LicensePlan">
+                            <option value="MONTHLY">Monthly</option>
+                            <option value="YEARLY">Yearly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="CreateTenantUserAsync" disabled="@IsBusy">Create Tenant Admin</button>
+                </div>
+            </section>
+
+            <section class="products-table-wrap">
+                @if (SelectedTenantUsers.Count == 0)
+                {
+                    <div class="placeholder-panel" style="margin-top:20px;">No tenant admins loaded for this tenant yet.</div>
+                }
+                else
+                {
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Role</th>
+                                <th>Plan</th>
+                                <th>Status</th>
+                                <th>Expires</th>
+                                <th>Toggle</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in SelectedTenantUsers)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="table-primary-cell">@user.Username</div>
+                                        <div class="table-secondary-cell">@user.Id.ToString()[..8].ToUpperInvariant()</div>
+                                    </td>
+                                    <td>@user.Role</td>
+                                    <td>
+                                        <select class="form-input compact-input" value="@user.LicensePlan" @onchange="args => OnUserPlanChanged(user, args.Value?.ToString())">
+                                            <option value="MONTHLY">Monthly</option>
+                                            <option value="YEARLY">Yearly</option>
+                                        </select>
+                                    </td>
+                                    <td>@(user.IsActive ? "Active" : "Inactive")</td>
+                                    <td>@user.LicenseExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        <button class="ghost-button" @onclick="() => ToggleUserActiveAsync(user)">@(user.IsActive ? "Deactivate" : "Activate")</button>
+                                    </td>
+                                    <td>
+                                        <button class="ghost-button" @onclick="() => SelectTenantUserForManagement(user)">Manage User</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            @if (SelectedTenantUser is not null)
+            {
+                <section class="showcase-panel">
+                    <div class="showcase-header">
+                        <div>
+                            <span class="eyebrow">Selected Tenant Admin</span>
+                            <h2>@SelectedTenantUser.Username</h2>
+                        </div>
+                        <p>Reset the password for the selected tenant-level admin account.</p>
+                    </div>
+
+                    <div class="invoice-form-grid" style="margin-top:18px;">
+                        <div class="field">
+                            <label for="tenantAdminPasswordReset">New Password</label>
+                            <input id="tenantAdminPasswordReset" class="form-input" type="password" @bind="TenantUserPasswordModel.NewPassword" />
+                        </div>
+                    </div>
+
+                    <div class="invoice-actions" style="margin-top:16px;">
+                        <button class="submit-button" @onclick="SetTenantUserPasswordAsync" disabled="@IsBusy">Reset Tenant Admin Password</button>
+                    </div>
+                </section>
+            }
+
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">Branches</span>
+                        <h2>Create branches under this tenant</h2>
+                    </div>
+                    <p>Branch users such as Cashier, HR, and Branch Manager should be created under branches, not directly under the tenant.</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="branchName">Branch Name</label>
+                        <input id="branchName" class="form-input" @bind="CreateBranchModel.Name" />
+                    </div>
+
+                    <div class="field">
+                        <label for="branchCode">Branch Code</label>
+                        <input id="branchCode" class="form-input" @bind="CreateBranchModel.Code" />
+                    </div>
+
+                    <div class="field">
+                        <label for="branchCurrency">Currency</label>
+                        <input id="branchCurrency" class="form-input" @bind="CreateBranchModel.CurrencyCode" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="CreateBranchAsync" disabled="@IsBusy">Create Branch</button>
+                </div>
+            </section>
+
+            <section class="products-table-wrap">
+                @if (SelectedBranches.Count == 0)
+                {
+                    <div class="placeholder-panel" style="margin-top:20px;">No branches loaded for this tenant yet.</div>
+                }
+                else
+                {
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>Branch</th>
+                                <th>Currency</th>
+                                <th>Status</th>
+                                <th>Assigned Users</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var branch in SelectedBranches)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="table-primary-cell">@branch.Name</div>
+                                        <div class="table-secondary-cell">@branch.Code</div>
+                                    </td>
+                                    <td>@branch.CurrencyCode</td>
+                                    <td>@(branch.IsActive ? "Active" : "Inactive")</td>
+                                    <td>@branch.AssignedUsers</td>
+                                    <td>
+                                        <button class="ghost-button" @onclick="() => SelectBranchAsync(branch)">Manage Branch</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="products-table-wrap">
+                <div class="showcase-header" style="margin-top:20px;">
+                    <div>
+                        <span class="eyebrow">Branch Users</span>
+                        <h2>All branch users by branch</h2>
+                    </div>
+                    <p>Every branch-level user below is shown with the branch it belongs to.</p>
+                </div>
+
+                @if (TenantBranchUsers.Count == 0)
+                {
+                    <div class="placeholder-panel" style="margin-top:20px;">No branch users loaded under this tenant yet.</div>
+                }
+                else
+                {
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Branch</th>
+                                <th>Role</th>
+                                <th>Plan</th>
+                                <th>Status</th>
+                                <th>Expires</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in TenantBranchUsers)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="table-primary-cell">@user.Username</div>
+                                        <div class="table-secondary-cell">@user.Id.ToString()[..8].ToUpperInvariant()</div>
+                                    </td>
+                                    <td>
+                                        <div class="table-primary-cell">@DisplayBranchName(user)</div>
+                                        <div class="table-secondary-cell">@user.BranchId.ToString()[..8].ToUpperInvariant()</div>
+                                    </td>
+                                    <td>@user.Role</td>
+                                    <td>@user.LicensePlan</td>
+                                    <td>@(user.IsActive ? "Active" : "Inactive")</td>
+                                    <td>@user.LicenseExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            @if (SelectedBranch is not null)
+            {
+                <section class="showcase-panel">
+                    <div class="showcase-header">
+                        <div>
+                            <span class="eyebrow">Branch Settings</span>
+                            <h2>Update @SelectedBranch.Name</h2>
+                        </div>
+                        <p>Change branch details and control whether this branch is active for new branch users.</p>
+                    </div>
+
+                    <div class="invoice-form-grid" style="margin-top:18px;">
+                        <div class="field">
+                            <label for="updateBranchName">Branch Name</label>
+                            <input id="updateBranchName" class="form-input" @bind="UpdateBranchModel.Name" />
+                        </div>
+
+                        <div class="field">
+                            <label for="updateBranchCode">Branch Code</label>
+                            <input id="updateBranchCode" class="form-input" @bind="UpdateBranchModel.Code" />
+                        </div>
+
+                        <div class="field">
+                            <label for="updateBranchCurrency">Currency</label>
+                            <input id="updateBranchCurrency" class="form-input" @bind="UpdateBranchModel.CurrencyCode" />
+                        </div>
+
+                        <div class="field">
+                            <label for="updateBranchStatus">Status</label>
+                            <select id="updateBranchStatus" class="form-input" @bind="SelectedBranchStatusValue">
+                                <option value="true">Active</option>
+                                <option value="false">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="invoice-actions" style="margin-top:16px;">
+                        <button class="submit-button" @onclick="UpdateSelectedBranchAsync" disabled="@IsBusy">Update Branch</button>
+                    </div>
+                </section>
+
+                <section class="showcase-panel">
+                    <div class="showcase-header">
+                        <div>
+                            <span class="eyebrow">Selected Branch</span>
+                            <h2>@SelectedBranch.Name</h2>
+                        </div>
+                        <p>Create lower-access users for the selected branch.</p>
+                    </div>
+
+                    <div class="invoice-form-grid" style="margin-top:18px;">
+                        <div class="field">
+                            <label for="branchUserName">Username</label>
+                            <input id="branchUserName" class="form-input" @bind="CreateBranchUserModel.Username" />
+                        </div>
+
+                        <div class="field">
+                            <label for="branchUserRole">Role</label>
+                            <select id="branchUserRole" class="form-input" @bind="CreateBranchUserModel.Role">
+                                <option value="CASHIER">Cashier</option>
+                                <option value="HR">HR</option>
+                                <option value="BRANCH_MANAGER">Branch Manager</option>
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label for="branchUserPassword">Password</label>
+                            <input id="branchUserPassword" class="form-input" @bind="CreateBranchUserModel.Password" />
+                        </div>
+
+                        <div class="field">
+                            <label for="branchUserPin">PIN</label>
+                            <input id="branchUserPin" class="form-input" @bind="CreateBranchUserModel.Pin" />
+                        </div>
+
+                        <div class="field">
+                            <label for="branchUserPlan">User License Plan</label>
+                            <select id="branchUserPlan" class="form-input" @bind="CreateBranchUserModel.LicensePlan">
+                                <option value="MONTHLY">Monthly</option>
+                                <option value="YEARLY">Yearly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="invoice-actions" style="margin-top:16px;">
+                        <button class="submit-button" @onclick="CreateBranchUserAsync" disabled="@IsBusy">Create Branch User</button>
+                    </div>
+                </section>
+
+                <section class="products-table-wrap">
+                    @if (SelectedBranchUsers.Count == 0)
+                    {
+                        <div class="placeholder-panel" style="margin-top:20px;">No branch users loaded for this branch yet.</div>
+                    }
+                    else
+                    {
+                        <table class="products-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>Plan</th>
+                                    <th>Status</th>
+                                    <th>Expires</th>
+                                    <th>Toggle</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var user in SelectedBranchUsers)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="table-primary-cell">@user.Username</div>
+                                            <div class="table-secondary-cell">@DisplayBranchName(user) | @user.Id.ToString()[..8].ToUpperInvariant()</div>
+                                        </td>
+                                        <td>@user.Role</td>
+                                        <td>
+                                            <select class="form-input compact-input" value="@user.LicensePlan" @onchange="args => OnBranchUserPlanChanged(user, args.Value?.ToString())">
+                                                <option value="MONTHLY">Monthly</option>
+                                                <option value="YEARLY">Yearly</option>
+                                            </select>
+                                        </td>
+                                        <td>@(user.IsActive ? "Active" : "Inactive")</td>
+                                        <td>@user.LicenseExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                        <td>
+                                            <button class="ghost-button" @onclick="() => ToggleBranchUserActiveAsync(user)">@(user.IsActive ? "Deactivate" : "Activate")</button>
+                                        </td>
+                                        <td>
+                                            <button class="ghost-button" @onclick="() => SelectBranchUserForManagement(user)">Manage User</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </section>
+
+                @if (SelectedBranchUser is not null)
+                {
+                    <section class="showcase-panel">
+                        <div class="showcase-header">
+                            <div>
+                                <span class="eyebrow">Selected Branch User</span>
+                                <h2>@SelectedBranchUser.Username</h2>
+                            </div>
+                            <p>Reset the password for the selected branch user account.</p>
+                        </div>
+
+                        <div class="invoice-form-grid" style="margin-top:18px;">
+                            <div class="field">
+                                <label for="branchUserPasswordReset">New Password</label>
+                                <input id="branchUserPasswordReset" class="form-input" type="password" @bind="BranchUserPasswordModel.NewPassword" />
+                            </div>
+                        </div>
+
+                        <div class="invoice-actions" style="margin-top:16px;">
+                            <button class="submit-button" @onclick="SetBranchUserPasswordAsync" disabled="@IsBusy">Reset Branch User Password</button>
+                        </div>
+                    </section>
+                }
+            }
+        }
+    }
+</div>
+
+@code {
+    private bool _ownerSessionChecked;
+    private bool IsBusy { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+
+    private OwnerLoginFormModel LoginModel { get; set; } = new();
+    private CreatePlatformOwnerRequestModel CreatePlatformOwnerModel { get; set; } = new();
+    private CreatePlatformTenantRequestModel CreateTenantModel { get; set; } = new();
+    private UpdateTenantLicenseRequestModel UpdateTenantLicenseModel { get; set; } = new();
+    private CreateTenantUserRequestModel CreateTenantUserModel { get; set; } = new();
+    private CreateBranchRequestModel CreateBranchModel { get; set; } = new();
+    private CreateBranchUserRequestModel CreateBranchUserModel { get; set; } = new();
+    private UpdateBranchRequestModel UpdateBranchModel { get; set; } = new();
+    private SetUserPasswordRequestModel TenantUserPasswordModel { get; set; } = new();
+    private SetUserPasswordRequestModel BranchUserPasswordModel { get; set; } = new();
+    private SetPlatformOwnerPasswordRequestModel PlatformOwnerPasswordModel { get; set; } = new();
+    private string SelectedBranchStatusValue { get; set; } = "true";
+
+    private List<PlatformOwnerModel> PlatformOwners { get; set; } = [];
+    private PlatformOwnerModel? SelectedPlatformOwner { get; set; }
+    private List<PlatformTenantModel> Tenants { get; set; } = [];
+    private PlatformTenantModel? SelectedTenant { get; set; }
+    private List<PlatformTenantUserModel> SelectedTenantUsers { get; set; } = [];
+    private PlatformTenantUserModel? SelectedTenantUser { get; set; }
+    private List<PlatformBranchModel> SelectedBranches { get; set; } = [];
+    private PlatformBranchModel? SelectedBranch { get; set; }
+    private List<PlatformBranchUserModel> TenantBranchUsers { get; set; } = [];
+    private List<PlatformBranchUserModel> SelectedBranchUsers { get; set; } = [];
+    private PlatformBranchUserModel? SelectedBranchUser { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _ownerSessionChecked)
+            return;
+
+        _ownerSessionChecked = true;
+        try
+        {
+            await OwnerSessionState.InitializeAsync();
+
+            if (OwnerSessionState.IsAuthenticated)
+                await LoadOwnerConsoleAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OwnerLoginAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            var response = await PlatformAdminApiClient.LoginAsync(LoginModel);
+            await OwnerSessionState.SignInAsync(response.Token, LoginModel.Username.Trim());
+            FlashMessage = "Owner signed in successfully.";
+            await LoadOwnerConsoleAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task OwnerSignOutAsync()
+    {
+        await OwnerSessionState.SignOutAsync();
+        PlatformOwners = [];
+        SelectedPlatformOwner = null;
+        Tenants = [];
+        SelectedTenant = null;
+        SelectedTenantUsers = [];
+        SelectedTenantUser = null;
+        SelectedBranches = [];
+        SelectedBranch = null;
+        SelectedBranchUsers = [];
+        SelectedBranchUser = null;
+        FlashMessage = string.Empty;
+        ErrorMessage = string.Empty;
+        NavigationManager.NavigateTo("/owner", forceLoad: false);
+    }
+
+    private async Task LoadOwnerConsoleAsync()
+    {
+        ErrorMessage = string.Empty;
+
+        var ownersTask = PlatformAdminApiClient.GetOwnersAsync(OwnerSessionState);
+        var tenantsTask = PlatformAdminApiClient.GetTenantsAsync(OwnerSessionState);
+        await Task.WhenAll(ownersTask, tenantsTask);
+
+        PlatformOwners = ownersTask.Result.ToList();
+        Tenants = tenantsTask.Result.ToList();
+    }
+
+    private async Task LoadTenantsAsync()
+    {
+        ErrorMessage = string.Empty;
+        Tenants = (await PlatformAdminApiClient.GetTenantsAsync(OwnerSessionState)).ToList();
+    }
+
+    private async Task RefreshOwnersAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            PlatformOwners = (await PlatformAdminApiClient.GetOwnersAsync(OwnerSessionState)).ToList();
+            SelectedPlatformOwner = SelectedPlatformOwner is null
+                ? null
+                : PlatformOwners.FirstOrDefault(x => x.Id == SelectedPlatformOwner.Id);
+            FlashMessage = "Owner accounts refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreatePlatformOwnerAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.CreateOwnerAsync(OwnerSessionState, CreatePlatformOwnerModel);
+            CreatePlatformOwnerModel = new CreatePlatformOwnerRequestModel();
+            await RefreshOwnersAsync();
+            FlashMessage = "Platform owner created successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SelectPlatformOwner(PlatformOwnerModel owner)
+    {
+        SelectedPlatformOwner = owner;
+        PlatformOwnerPasswordModel = new SetPlatformOwnerPasswordRequestModel();
+    }
+
+    private async Task TogglePlatformOwnerAsync(PlatformOwnerModel owner)
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.UpdateOwnerStatusAsync(OwnerSessionState, owner.Id, new UpdatePlatformOwnerStatusRequestModel
+            {
+                IsActive = !owner.IsActive
+            });
+            await RefreshOwnersAsync();
+            FlashMessage = "Owner status updated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SetPlatformOwnerPasswordAsync()
+    {
+        if (SelectedPlatformOwner is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.SetOwnerPasswordAsync(OwnerSessionState, SelectedPlatformOwner.Id, PlatformOwnerPasswordModel);
+            PlatformOwnerPasswordModel = new SetPlatformOwnerPasswordRequestModel();
+            FlashMessage = "Owner password reset successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RefreshTenantsAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await LoadTenantsAsync();
+            FlashMessage = "Tenants refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateTenantAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.CreateTenantAsync(OwnerSessionState, CreateTenantModel);
+            FlashMessage = "Tenant created successfully.";
+            CreateTenantModel = new CreatePlatformTenantRequestModel();
+            await LoadTenantsAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectTenantAsync(PlatformTenantModel tenant)
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            SelectedTenant = tenant;
+            SelectedBranch = null;
+            TenantBranchUsers = [];
+            SelectedBranchUsers = [];
+            SelectedTenantUser = null;
+            SelectedBranchUser = null;
+            UpdateTenantLicenseModel = new UpdateTenantLicenseRequestModel
+            {
+                LicensePlan = tenant.LicensePlan,
+                MaxUsers = tenant.MaxUsers
+            };
+            CreateTenantUserModel = new CreateTenantUserRequestModel();
+            CreateBranchModel = new CreateBranchRequestModel();
+            CreateBranchUserModel = new CreateBranchUserRequestModel();
+            UpdateBranchModel = new UpdateBranchRequestModel();
+            SelectedBranchStatusValue = "true";
+            TenantUserPasswordModel = new SetUserPasswordRequestModel();
+            BranchUserPasswordModel = new SetUserPasswordRequestModel();
+            SelectedTenantUsers = (await PlatformAdminApiClient.GetTenantUsersAsync(OwnerSessionState, tenant.Id)).ToList();
+            SelectedBranches = (await PlatformAdminApiClient.GetBranchesAsync(OwnerSessionState, tenant.Id)).ToList();
+            TenantBranchUsers = await LoadTenantBranchUsersAsync(tenant.Id);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            SelectedTenantUsers = [];
+            SelectedBranches = [];
+            TenantBranchUsers = [];
+            SelectedBranch = null;
+            SelectedBranchUsers = [];
+            SelectedTenantUser = null;
+            SelectedBranchUser = null;
+        }
+    }
+
+    private async Task UpdateTenantLicenseAsync()
+    {
+        if (SelectedTenant is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.UpdateTenantLicenseAsync(OwnerSessionState, SelectedTenant.Id, UpdateTenantLicenseModel);
+            FlashMessage = "Tenant license updated successfully.";
+            await LoadTenantsAsync();
+            SelectedTenant = Tenants.FirstOrDefault(x => x.Id == SelectedTenant.Id);
+            if (SelectedTenant is not null)
+            {
+                UpdateTenantLicenseModel = new UpdateTenantLicenseRequestModel
+                {
+                    LicensePlan = SelectedTenant.LicensePlan,
+                    MaxUsers = SelectedTenant.MaxUsers
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateTenantUserAsync()
+    {
+        if (SelectedTenant is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.CreateTenantUserAsync(OwnerSessionState, SelectedTenant.Id, CreateTenantUserModel);
+            FlashMessage = "Tenant admin created successfully.";
+            CreateTenantUserModel = new CreateTenantUserRequestModel();
+            await RefreshSelectedTenantAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ToggleUserActiveAsync(PlatformTenantUserModel user)
+    {
+        if (SelectedTenant is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.UpdateTenantUserLicenseAsync(OwnerSessionState, SelectedTenant.Id, user.Id, new UpdateTenantUserLicenseRequestModel
+            {
+                LicensePlan = user.LicensePlan,
+                IsActive = !user.IsActive
+            });
+
+            FlashMessage = "Tenant admin license updated successfully.";
+            await RefreshSelectedTenantAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateBranchAsync()
+    {
+        if (SelectedTenant is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.CreateBranchAsync(OwnerSessionState, SelectedTenant.Id, CreateBranchModel);
+            FlashMessage = "Branch created successfully.";
+            CreateBranchModel = new CreateBranchRequestModel();
+            await RefreshSelectedTenantAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectBranchAsync(PlatformBranchModel branch)
+    {
+        if (SelectedTenant is null)
+            return;
+
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            SelectedBranch = branch;
+            SelectedBranchUser = null;
+            CreateBranchUserModel = new CreateBranchUserRequestModel();
+            BranchUserPasswordModel = new SetUserPasswordRequestModel();
+            UpdateBranchModel = new UpdateBranchRequestModel
+            {
+                Name = branch.Name,
+                Code = branch.Code,
+                CurrencyCode = branch.CurrencyCode,
+                IsActive = branch.IsActive
+            };
+            SelectedBranchStatusValue = branch.IsActive ? "true" : "false";
+            SelectedBranchUsers = (await PlatformAdminApiClient.GetBranchUsersAsync(OwnerSessionState, SelectedTenant.Id, branch.Id)).ToList();
+            EnrichBranchUsers(SelectedBranchUsers);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            SelectedBranch = null;
+            SelectedBranchUsers = [];
+            SelectedBranchUser = null;
+            UpdateBranchModel = new UpdateBranchRequestModel();
+            SelectedBranchStatusValue = "true";
+        }
+    }
+
+    private async Task CreateBranchUserAsync()
+    {
+        if (SelectedTenant is null || SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.CreateBranchUserAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id, CreateBranchUserModel);
+            FlashMessage = "Branch user created successfully.";
+            CreateBranchUserModel = new CreateBranchUserRequestModel();
+            await RefreshSelectedTenantAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SelectTenantUserForManagement(PlatformTenantUserModel user)
+    {
+        SelectedTenantUser = user;
+        TenantUserPasswordModel = new SetUserPasswordRequestModel();
+    }
+
+    private void SelectBranchUserForManagement(PlatformBranchUserModel user)
+    {
+        SelectedBranchUser = user;
+        BranchUserPasswordModel = new SetUserPasswordRequestModel();
+    }
+
+    private async Task UpdateSelectedBranchAsync()
+    {
+        if (SelectedTenant is null || SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            UpdateBranchModel.IsActive = string.Equals(SelectedBranchStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            var updatedBranch = await PlatformAdminApiClient.UpdateBranchAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id, UpdateBranchModel);
+            SelectedBranch = updatedBranch;
+            FlashMessage = "Branch updated successfully.";
+            await RefreshSelectedTenantAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SetTenantUserPasswordAsync()
+    {
+        if (SelectedTenant is null || SelectedTenantUser is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.SetTenantUserPasswordAsync(OwnerSessionState, SelectedTenant.Id, SelectedTenantUser.Id, TenantUserPasswordModel);
+            FlashMessage = "Tenant admin password reset successfully.";
+            TenantUserPasswordModel = new SetUserPasswordRequestModel();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SetBranchUserPasswordAsync()
+    {
+        if (SelectedTenant is null || SelectedBranch is null || SelectedBranchUser is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.SetBranchUserPasswordAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id, SelectedBranchUser.Id, BranchUserPasswordModel);
+            FlashMessage = "Branch user password reset successfully.";
+            BranchUserPasswordModel = new SetUserPasswordRequestModel();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ToggleBranchUserActiveAsync(PlatformBranchUserModel user)
+    {
+        if (SelectedTenant is null || SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.UpdateBranchUserLicenseAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id, user.Id, new UpdateTenantUserLicenseRequestModel
+            {
+                LicensePlan = user.LicensePlan,
+                IsActive = !user.IsActive
+            });
+
+            FlashMessage = "Branch user license updated successfully.";
+            SelectedBranchUsers = (await PlatformAdminApiClient.GetBranchUsersAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id)).ToList();
+            SelectedBranches = (await PlatformAdminApiClient.GetBranchesAsync(OwnerSessionState, SelectedTenant.Id)).ToList();
+            TenantBranchUsers = await LoadTenantBranchUsersAsync(SelectedTenant.Id);
+            EnrichBranchUsers(SelectedBranchUsers);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task OnBranchUserPlanChanged(PlatformBranchUserModel user, string? newPlan)
+    {
+        if (SelectedTenant is null || SelectedBranch is null || string.IsNullOrWhiteSpace(newPlan))
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.UpdateBranchUserLicenseAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id, user.Id, new UpdateTenantUserLicenseRequestModel
+            {
+                LicensePlan = newPlan,
+                IsActive = user.IsActive
+            });
+
+            FlashMessage = "Branch user plan updated successfully.";
+            SelectedBranchUsers = (await PlatformAdminApiClient.GetBranchUsersAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id)).ToList();
+            TenantBranchUsers = await LoadTenantBranchUsersAsync(SelectedTenant.Id);
+            EnrichBranchUsers(SelectedBranchUsers);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RefreshSelectedTenantAsync()
+    {
+        if (SelectedTenant is null)
+            return;
+
+        var selectedTenantId = SelectedTenant.Id;
+        var selectedBranchId = SelectedBranch?.Id;
+
+        await LoadTenantsAsync();
+        SelectedTenant = Tenants.FirstOrDefault(x => x.Id == selectedTenantId);
+
+        if (SelectedTenant is null)
+        {
+            SelectedTenantUsers = [];
+            SelectedTenantUser = null;
+            SelectedBranches = [];
+            SelectedBranch = null;
+            TenantBranchUsers = [];
+            SelectedBranchUsers = [];
+            SelectedBranchUser = null;
+            return;
+        }
+
+        UpdateTenantLicenseModel = new UpdateTenantLicenseRequestModel
+        {
+            LicensePlan = SelectedTenant.LicensePlan,
+            MaxUsers = SelectedTenant.MaxUsers
+        };
+
+        SelectedTenantUsers = (await PlatformAdminApiClient.GetTenantUsersAsync(OwnerSessionState, SelectedTenant.Id)).ToList();
+        SelectedTenantUser = SelectedTenantUser is null
+            ? null
+            : SelectedTenantUsers.FirstOrDefault(x => x.Id == SelectedTenantUser.Id);
+        SelectedBranches = (await PlatformAdminApiClient.GetBranchesAsync(OwnerSessionState, SelectedTenant.Id)).ToList();
+        TenantBranchUsers = await LoadTenantBranchUsersAsync(SelectedTenant.Id);
+        SelectedBranch = selectedBranchId.HasValue
+            ? SelectedBranches.FirstOrDefault(x => x.Id == selectedBranchId.Value)
+            : null;
+
+        if (SelectedBranch is not null)
+        {
+            UpdateBranchModel = new UpdateBranchRequestModel
+            {
+                Name = SelectedBranch.Name,
+                Code = SelectedBranch.Code,
+                CurrencyCode = SelectedBranch.CurrencyCode,
+                IsActive = SelectedBranch.IsActive
+            };
+            SelectedBranchStatusValue = SelectedBranch.IsActive ? "true" : "false";
+            SelectedBranchUsers = (await PlatformAdminApiClient.GetBranchUsersAsync(OwnerSessionState, SelectedTenant.Id, SelectedBranch.Id)).ToList();
+            EnrichBranchUsers(SelectedBranchUsers);
+            SelectedBranchUser = SelectedBranchUser is null
+                ? null
+                : SelectedBranchUsers.FirstOrDefault(x => x.Id == SelectedBranchUser.Id);
+        }
+        else
+        {
+            SelectedBranchUsers = [];
+            SelectedBranchUser = null;
+            UpdateBranchModel = new UpdateBranchRequestModel();
+            SelectedBranchStatusValue = "true";
+        }
+    }
+
+    private async Task<List<PlatformBranchUserModel>> LoadTenantBranchUsersAsync(Guid tenantId)
+    {
+        var result = new List<PlatformBranchUserModel>();
+
+        foreach (var branch in SelectedBranches)
+        {
+            var users = (await PlatformAdminApiClient.GetBranchUsersAsync(OwnerSessionState, tenantId, branch.Id)).ToList();
+            foreach (var user in users)
+            {
+                user.BranchName = branch.Name;
+                user.BranchCode = branch.Code;
+                result.Add(user);
+            }
+        }
+
+        return result
+            .OrderBy(user => user.BranchName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(user => user.Username, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void EnrichBranchUsers(List<PlatformBranchUserModel> users)
+    {
+        foreach (var user in users)
+        {
+            var branch = SelectedBranches.FirstOrDefault(x => x.Id == user.BranchId);
+            user.BranchName = branch?.Name ?? SelectedBranch?.Name ?? string.Empty;
+            user.BranchCode = branch?.Code ?? SelectedBranch?.Code ?? string.Empty;
+        }
+    }
+
+    private static string DisplayBranchName(PlatformBranchUserModel user)
+        => string.IsNullOrWhiteSpace(user.BranchName)
+            ? "Unknown branch"
+            : string.IsNullOrWhiteSpace(user.BranchCode)
+                ? user.BranchName
+                : $"{user.BranchName} ({user.BranchCode})";
+
+    private async Task OnUserPlanChanged(PlatformTenantUserModel user, string? newPlan)
+    {
+        if (SelectedTenant is null || string.IsNullOrWhiteSpace(newPlan))
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await PlatformAdminApiClient.UpdateTenantUserLicenseAsync(OwnerSessionState, SelectedTenant.Id, user.Id, new UpdateTenantUserLicenseRequestModel
+            {
+                LicensePlan = newPlan,
+                IsActive = user.IsActive
+            });
+
+            FlashMessage = "User plan updated successfully.";
+            SelectedTenantUsers = (await PlatformAdminApiClient.GetTenantUsersAsync(OwnerSessionState, SelectedTenant.Id)).ToList();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+}

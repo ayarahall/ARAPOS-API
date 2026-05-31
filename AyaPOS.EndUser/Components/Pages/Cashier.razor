@@ -1,0 +1,536 @@
+@page "/cashier"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Cashier
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Cashier
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject CashierApiClient CashierApiClient
+
+<PageTitle>Cashier Session</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="Cashier Session" Description="Open the branch cashier session, monitor expected cash, and close the shift with the actual counted amount." SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="cashier" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Shift Context</span>
+                <h2>@CashierContextTitle</h2>
+            </div>
+            <p>@CashierContextDescription</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="ghost-button" @onclick="RefreshCashierAsync" disabled="@IsBusy">Refresh Cashier</button>
+            @if (CurrentSession is null)
+            {
+                <button class="submit-button" @onclick="OpenOpenSessionModal" disabled="@IsBusy">Open Session</button>
+            }
+            else if (!CurrentSession.IsClosed)
+            {
+                <button class="submit-button" @onclick="OpenCloseSessionModal" disabled="@IsBusy">Close Session</button>
+            }
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Current Session</span>
+            <strong class="metric-value">@SessionStateLabel</strong>
+            <span class="metric-note">Open a new session before collecting branch payments for the day.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Expected Cash</span>
+            <strong class="metric-value">@ExpectedCashSummary</strong>
+            <span class="metric-note">Expected drawer amount based on opening cash, cash sales, and refunds.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Session History</span>
+            <strong class="metric-value">@SessionHistory.Count</strong>
+            <span class="metric-note">Recent cashier sessions recorded for this branch.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Latest Difference</span>
+            <strong class="metric-value">@DifferenceSummary</strong>
+            <span class="metric-note">Difference between expected and counted cash after closing the latest session.</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Branch Day</span>
+                <h2>Daily branch sales snapshot</h2>
+            </div>
+            <p>This area shows the whole branch day. It is broader than the current cashier shift and helps avoid mixing day totals with one drawer session.</p>
+        </div>
+
+        <section class="metrics-grid" style="margin-top:18px;">
+            <article class="metric-card">
+                <span class="metric-label">Business Day</span>
+                <strong class="metric-value">@DailySummaryDateLabel</strong>
+                <span class="metric-note">Current UTC business date used by the branch API summary.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Invoices Today</span>
+                <strong class="metric-value">@DailyInvoiceCountLabel</strong>
+                <span class="metric-note">All invoices created today for this branch.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Collected Today</span>
+                <strong class="metric-value">@DailyCollectedLabel</strong>
+                <span class="metric-note">Payments actually recorded today for this branch.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Remaining Today</span>
+                <strong class="metric-value">@DailyRemainingLabel</strong>
+                <span class="metric-note">Gross sales minus collected payments for today.</span>
+            </article>
+        </section>
+
+        <div class="featured-products-grid" style="margin-top:18px;">
+            <article class="product-feature-card">
+                <div class="product-feature-topline"><span class="product-feature-id">SALES</span></div>
+                <h3>Gross Sales</h3>
+                <div class="product-feature-price">@DailyGrossSalesLabel</div>
+                <div class="product-feature-meta">Total invoice value created today.</div>
+            </article>
+
+            <article class="product-feature-card">
+                <div class="product-feature-topline"><span class="product-feature-id">POSTED</span></div>
+                <h3>Posted Invoices</h3>
+                <div class="product-feature-price">@DailyPostedCountLabel</div>
+                <div class="product-feature-meta">Invoices that moved beyond draft today.</div>
+            </article>
+
+            <article class="product-feature-card">
+                <div class="product-feature-topline"><span class="product-feature-id">PAID</span></div>
+                <h3>Paid Invoices</h3>
+                <div class="product-feature-price">@DailyPaidCountLabel</div>
+                <div class="product-feature-meta">Invoices fully paid today.</div>
+            </article>
+
+            <article class="product-feature-card">
+                <div class="product-feature-topline"><span class="product-feature-id">CLIENTS</span></div>
+                <h3>Active Customers</h3>
+                <div class="product-feature-price">@DailyCustomerCountLabel</div>
+                <div class="product-feature-meta">Active customers touched by today’s branch sales.</div>
+            </article>
+        </div>
+    </section>
+
+    @if (CurrentSession is not null)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Current Shift</span>
+                    <h2>Track the live cashier session</h2>
+                </div>
+                <p>This area is only for the active drawer shift opened by one cashier user. It should reflect session-level sales, collections, and closing accuracy.</p>
+            </div>
+
+            <div class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">Cashier</span>
+                    <strong class="metric-value">@CurrentSession.Username</strong>
+                    <span class="metric-note">Shift owner for this cashier session.</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">Status</span>
+                    <strong class="metric-value">@(CurrentSession.IsClosed ? "Closed" : "Open")</strong>
+                    <span class="metric-note">Opened at @CurrentSession.OpenedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">Opening Cash</span>
+                    <strong class="metric-value">@FormatMoney(CurrentSession.OpeningCashCents)</strong>
+                    <span class="metric-note">Opening amount placed in the drawer at the start of the session.</span>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">Session Sales</span>
+                    <strong class="metric-value">@FormatMoney(CurrentSession.GrossSalesCents)</strong>
+                    <span class="metric-note">@CurrentSession.SalesInvoiceCount invoice(s) moved through this session window.</span>
+                </article>
+            </div>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Session Breakdown</span>
+                    <h2>Sales and refund totals</h2>
+                </div>
+                <p>This breakdown helps the branch compare payment mix and refund impact before closing the cashier session.</p>
+            </div>
+
+            <div class="featured-products-grid" style="margin-top:18px;">
+                <article class="product-feature-card">
+                    <div class="product-feature-topline"><span class="product-feature-id">CASH</span></div>
+                    <h3>Cash Sales</h3>
+                    <div class="product-feature-price">@FormatMoney(CurrentSession.TotalCashCents)</div>
+                    <div class="product-feature-meta">Included in the expected cash amount.</div>
+                </article>
+
+                <article class="product-feature-card">
+                    <div class="product-feature-topline"><span class="product-feature-id">CARD</span></div>
+                    <h3>Card Sales</h3>
+                    <div class="product-feature-price">@FormatMoney(CurrentSession.TotalCardCents)</div>
+                    <div class="product-feature-meta">Collected outside the physical cash drawer.</div>
+                </article>
+
+                <article class="product-feature-card">
+                    <div class="product-feature-topline"><span class="product-feature-id">BANK</span></div>
+                    <h3>Transfers</h3>
+                    <div class="product-feature-price">@FormatMoney(CurrentSession.TotalTransferCents)</div>
+                    <div class="product-feature-meta">Transfer-based receipts during the session.</div>
+                </article>
+
+                <article class="product-feature-card">
+                    <div class="product-feature-topline"><span class="product-feature-id">REFUND</span></div>
+                    <h3>Refunds</h3>
+                    <div class="product-feature-price">@FormatMoney(CurrentSession.TotalRefundCents)</div>
+                    <div class="product-feature-meta">Refunds reduce the expected cash position.</div>
+                </article>
+
+                <article class="product-feature-card">
+                    <div class="product-feature-topline"><span class="product-feature-id">COLLECTED</span></div>
+                    <h3>Total Collected</h3>
+                    <div class="product-feature-price">@FormatMoney(CurrentSession.CollectedCents)</div>
+                    <div class="product-feature-meta">All payments captured while this cashier session was active.</div>
+                </article>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            <div class="showcase-header" style="padding:0 0 16px 0;">
+                <div>
+                    <span class="eyebrow">Shift Invoices</span>
+                    <h2>Invoices inside this cashier session</h2>
+                </div>
+                <p>These are the invoices created during this cashier shift window for the same branch.</p>
+            </div>
+
+            @if (CurrentSession.Invoices.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">No invoices have been recorded inside this cashier session yet.</div>
+            }
+            else
+            {
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>Invoice</th>
+                            <th>Customer</th>
+                            <th>Status</th>
+                            <th>Total</th>
+                            <th>Collected</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var invoice in CurrentSession.Invoices)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="table-primary-cell">@invoice.InvoiceCode</div>
+                                </td>
+                                <td>@(string.IsNullOrWhiteSpace(invoice.CustomerName) ? "Walk-in / No customer" : invoice.CustomerName)</td>
+                                <td>@invoice.Status</td>
+                                <td>@FormatMoney(invoice.TotalCents)</td>
+                                <td>@FormatMoney(invoice.CollectedCents)</td>
+                                <td>@invoice.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+    }
+
+    <section class="products-table-wrap">
+        @if (SessionHistory.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">No cashier sessions yet.</div>
+        }
+        else
+        {
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Opened</th>
+                        <th>Cashier</th>
+                        <th>Closed</th>
+                        <th>Status</th>
+                        <th>Sales</th>
+                        <th>Collected</th>
+                        <th>Opening Cash</th>
+                        <th>Expected</th>
+                        <th>Actual</th>
+                        <th>Difference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var session in SessionHistory)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@session.OpenedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                            </td>
+                            <td>@session.Username</td>
+                            <td>@(session.ClosedAt is null ? "-" : session.ClosedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                            <td>
+                                <span class="status-pill @(session.IsClosed ? "inactive" : "active")">
+                                    @(session.IsClosed ? "Closed" : "Open")
+                                </span>
+                            </td>
+                            <td>@FormatMoney(session.GrossSalesCents)</td>
+                            <td>@FormatMoney(session.CollectedCents)</td>
+                            <td>@FormatMoney(session.OpeningCashCents)</td>
+                            <td>@FormatMoney(session.ExpectedCashCents)</td>
+                            <td>@FormatMoney(session.ActualCashCents)</td>
+                            <td>@FormatMoney(session.DifferenceCents)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <ActionModal Visible="@ShowOpenSessionModal"
+                 Eyebrow="Open Session"
+                 Title="Start the cashier day"
+                 Description="Enter the opening cash placed in the drawer. This starts a fresh branch cashier session and ties the coming sales to this shift."
+                 OnClose="CloseOpenSessionModal">
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="openingCashModal">Opening Cash</label>
+                <input id="openingCashModal" class="form-input" type="number" step="0.01" min="0" @bind="OpeningCash" />
+            </div>
+        </div>
+
+        <div class="invoice-actions">
+            <button class="submit-button" @onclick="OpenSessionAsync" disabled="@IsBusy">@(IsBusy ? "Opening..." : "Open New Session")</button>
+            <button class="ghost-button" @onclick="CloseOpenSessionModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@ShowCloseSessionModal"
+                 Eyebrow="Close Session"
+                 Title="Count the drawer and close"
+                 Description="Enter the actual cash found in the drawer at shift end. The system compares it with expected cash for this cashier session."
+                 OnClose="CloseCloseSessionModal">
+        <div class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Expected Cash</span>
+                <strong class="metric-value">@ExpectedCashSummary</strong>
+                <span class="metric-note">Projected drawer amount from opening cash, cash sales, and refunds.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Session Sales</span>
+                <strong class="metric-value">@(CurrentSession is null ? "0 AED" : FormatMoney(CurrentSession.GrossSalesCents))</strong>
+                <span class="metric-note">Shift-only sales tied to this cashier session.</span>
+            </article>
+        </div>
+
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="actualCashModal">Actual Cash at Close</label>
+                <input id="actualCashModal" class="form-input" type="number" step="0.01" min="0" @bind="ActualCash" />
+            </div>
+        </div>
+
+        <div class="invoice-actions">
+            <button class="submit-button" @onclick="CloseSessionAsync" disabled="@IsBusy">@(IsBusy ? "Closing..." : "Close Session")</button>
+            <button class="ghost-button" @onclick="CloseCloseSessionModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+</div>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool ShowOpenSessionModal { get; set; }
+    private bool ShowCloseSessionModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private decimal OpeningCash { get; set; }
+    private decimal ActualCash { get; set; }
+    private CashierSessionModel? CurrentSession { get; set; }
+    private CashierDailySummaryModel? DailySummary { get; set; }
+    private List<CashierSessionModel> SessionHistory { get; set; } = [];
+
+    private string SessionStateLabel => CurrentSession is null ? "Not opened" : CurrentSession.IsClosed ? "Closed" : "Open";
+    private string ExpectedCashSummary => CurrentSession is null ? "0 AED" : FormatMoney(CurrentSession.ExpectedCashCents);
+    private string DifferenceSummary => CurrentSession is null ? "0 AED" : FormatMoney(CurrentSession.DifferenceCents);
+    private string DailySummaryDateLabel => DailySummary is null ? "-" : DailySummary.BusinessDateUtc.ToString("yyyy-MM-dd");
+    private string DailyInvoiceCountLabel => DailySummary?.InvoiceCount.ToString() ?? "0";
+    private string DailyPostedCountLabel => DailySummary?.PostedInvoiceCount.ToString() ?? "0";
+    private string DailyPaidCountLabel => DailySummary?.PaidInvoiceCount.ToString() ?? "0";
+    private string DailyCustomerCountLabel => DailySummary?.ActiveCustomerCount.ToString() ?? "0";
+    private string DailyGrossSalesLabel => DailySummary is null ? "0 AED" : FormatMoney(DailySummary.GrossSalesCents);
+    private string DailyCollectedLabel => DailySummary is null ? "0 AED" : FormatMoney(DailySummary.CollectedCents);
+    private string DailyRemainingLabel => DailySummary is null ? "0 AED" : FormatMoney(DailySummary.RemainingCents);
+    private string CashierContextTitle => string.IsNullOrWhiteSpace(SessionState.BranchName)
+        ? "Current cashier branch"
+        : SessionState.BranchName;
+    private string CashierContextDescription => CurrentSession is null
+        ? "Open the first drawer session for this branch before collecting cash payments."
+        : CurrentSession.IsClosed
+            ? "The latest cashier session is already closed. Review the totals or open the next shift when needed."
+            : "A live drawer session is active for this branch. Keep the expected and actual cash aligned before closing.";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked) return;
+        _sessionChecked = true;
+        try
+        {
+            await SessionState.InitializeAsync();
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+            if (!SessionState.CanAccessCashier)
+            {
+                NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+                return;
+            }
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        ErrorMessage = string.Empty;
+        try
+        {
+            CurrentSession = await CashierApiClient.GetCurrentSessionAsync(SessionState);
+            DailySummary = await CashierApiClient.GetDailySummaryAsync(SessionState);
+            var history = await CashierApiClient.GetSessionsAsync(SessionState, 1, 10);
+            SessionHistory = history.Items.ToList();
+            if (CurrentSession is not null && !CurrentSession.IsClosed)
+                ActualCash = CurrentSession.ExpectedCashCents / 100m;
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+
+    private async Task RefreshCashierAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await LoadDataAsync();
+            FlashMessage = "Cashier data refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OpenOpenSessionModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowOpenSessionModal = true;
+    }
+
+    private Task CloseOpenSessionModal()
+    {
+        ShowOpenSessionModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void OpenCloseSessionModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowCloseSessionModal = true;
+    }
+
+    private Task CloseCloseSessionModal()
+    {
+        ShowCloseSessionModal = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenSessionAsync()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        IsBusy = true;
+        try
+        {
+            await CashierApiClient.OpenSessionAsync(SessionState, new OpenCashierSessionRequestModel
+            {
+                OpeningCashCents = ToCents(OpeningCash)
+            });
+            OpeningCash = 0;
+            ShowOpenSessionModal = false;
+            FlashMessage = "Cashier session opened successfully.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task CloseSessionAsync()
+    {
+        if (CurrentSession is null) return;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        IsBusy = true;
+        try
+        {
+            CurrentSession = await CashierApiClient.CloseSessionAsync(SessionState, CurrentSession.Id, new CloseCashierSessionRequestModel
+            {
+                ActualCashCents = ToCents(ActualCash)
+            });
+            ActualCash = 0;
+            ShowCloseSessionModal = false;
+            FlashMessage = "Cashier session closed successfully.";
+            await LoadDataAsync();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private static int ToCents(decimal value) => (int)Math.Round(value * 100m, MidpointRounding.AwayFromZero);
+    private static string FormatMoney(int cents) => $"{cents / 100m:0.##} AED";
+}

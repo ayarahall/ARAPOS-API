@@ -1,0 +1,23 @@
+﻿<nav class="section-tabs" aria-label="Main sections">
+    <a class="@GetProductsTabClass()" href="/products">Products</a>
+    <a class="@GetServicesTabClass()" href="/services">Services</a>
+    <a class="@GetCustomersTabClass()" href="/customers">Customers</a>
+    <a class="@GetCashierTabClass()" href="/cashier">Cashier Session</a>
+    <a class="@GetCreateInvoiceTabClass()" href="/invoices/create">Create Invoice</a>
+    <a class="@GetInvoicesTabClass()" href="/invoices">Invoices</a>
+</nav>
+
+@code {
+    [Parameter]
+    public string Current { get; set; } = string.Empty;
+
+    private string GetProductsTabClass() => GetTabClass("products");
+    private string GetServicesTabClass() => GetTabClass("services");
+    private string GetCustomersTabClass() => GetTabClass("customers");
+    private string GetCashierTabClass() => GetTabClass("cashier");
+    private string GetCreateInvoiceTabClass() => GetTabClass("create-invoice");
+    private string GetInvoicesTabClass() => GetTabClass("invoices");
+
+    private string GetTabClass(string tab)
+        => Current == tab ? "section-tab active" : "section-tab";
+}

@@ -1,0 +1,1521 @@
+@page "/pos"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Cashier
+@using Ayapos.EndUser.Models.Customers
+@using Ayapos.EndUser.Models.Invoices
+@using Ayapos.EndUser.Models.Products
+@using Ayapos.EndUser.Models.Services
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Cashier
+@using Ayapos.EndUser.Services.Customers
+@using Ayapos.EndUser.Services.Invoices
+@using Ayapos.EndUser.Services.Products
+@using Ayapos.EndUser.Services.Services
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject CustomersApiClient CustomersApiClient
+@inject ProductsApiClient ProductsApiClient
+@inject ServicesApiClient ServicesApiClient
+@inject InvoicesApiClient InvoicesApiClient
+@inject CashierApiClient CashierApiClient
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Point of Sale</PageTitle>
+
+<div class="pos-shell">
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <header class="pos-topbar">
+        <div class="pos-topbar-left">
+            <button type="button" class="@(PosViewMode == "register" ? "pos-tab active" : "pos-tab")" @onclick='@(() => SetPosViewMode("register"))'>Register</button>
+            <button type="button" class="@(PosViewMode == "orders" ? "pos-tab active" : "pos-tab")" @onclick='@(() => SetPosViewMode("orders"))'>Orders</button>
+            <button type="button" class="pos-square-button" @onclick="StartNewSaleAsync" disabled="@IsBusy">+</button>
+            <div class="pos-ticket-badge">@DraftReferenceLabel</div>
+        </div>
+
+        <div class="pos-topbar-right">
+            <div class="pos-search-box">
+                <span class="pos-search-icon">Q</span>
+                <input class="pos-search-input" @bind="CatalogSearchText" @bind:event="oninput" placeholder="Search products..." />
+            </div>
+            <div class="pos-branch-chip">@BranchShortCode</div>
+            <div class="pos-user-chip">@UserInitial</div>
+            <button type="button" class="pos-menu-button" @onclick="ToggleRightMenu">Menu</button>
+        </div>
+    </header>
+
+    <div class="pos-tabs-wrap">
+        <RoleAwareSectionTabs Current="pos" />
+    </div>
+
+    <div class="pos-main">
+        <aside class="pos-order-panel">
+            <div class="pos-order-header">
+                <div>
+                    <div class="pos-order-label">Branch</div>
+                    <div class="pos-order-value">@BranchLabel</div>
+                </div>
+                <div>
+                    <div class="pos-order-label">Invoice</div>
+                    <div class="pos-order-value">@DraftStateLabel</div>
+                </div>
+            </div>
+
+            <div class="pos-status-strip">
+                <div class="pos-status-card">
+                    <span>Drawer</span>
+                    <strong>@CashierStateLabel</strong>
+                </div>
+                <div class="pos-status-card">
+                    <span>Status</span>
+                    <strong>@CurrentInvoiceStatusLabel</strong>
+                </div>
+                <div class="pos-status-card">
+                    <span>Remaining</span>
+                    <strong>@RemainingSummary</strong>
+                </div>
+            </div>
+
+            <div class="pos-customer-box">
+                <div class="pos-customer-field">
+                    <div class="pos-section-title">Customer</div>
+                    <select class="form-input pos-customer-select" @bind="SelectedCustomerId">
+                        <option value="">Walk-in / No customer</option>
+                        @foreach (var customer in CustomerOptions)
+                        {
+                            <option value="@customer.Id">@customer.FullName (@(string.IsNullOrWhiteSpace(customer.Phone) ? "No phone" : customer.Phone))</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="pos-customer-actions">
+                    @if (CurrentInvoice is not null && string.Equals(CurrentInvoice.Status, "Draft", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <button type="button" class="pos-ghost-action" @onclick="ApplyCustomerToCurrentInvoiceAsync" disabled="@IsBusy">Apply To Draft</button>
+                    }
+
+                    <button type="button" class="pos-ghost-action" @onclick="OpenQuickCustomerModal" disabled="@IsBusy">Search / Add Customer</button>
+
+                    @if (!string.IsNullOrWhiteSpace(SelectedCustomerId))
+                    {
+                        <button type="button" class="pos-ghost-action" @onclick="ClearSelectedCustomer" disabled="@IsBusy">Clear</button>
+                    }
+                </div>
+            </div>
+
+            <div class="pos-lines-list">
+                @if (CurrentInvoice is null)
+                {
+                    <div class="pos-empty-state">Create a draft to start selling.</div>
+                }
+                else if (CurrentInvoice.Items.Count == 0)
+                {
+                    <div class="pos-empty-state">Draft is ready. Pick a product or service from the catalog.</div>
+                }
+                else
+                {
+                    @foreach (var item in CurrentInvoice.Items)
+                    {
+                        <article class="pos-line-item @(SelectedLineId == item.Id ? "selected" : string.Empty)">
+                            <div class="pos-line-top">
+                                <span class="pos-line-qty">@item.Qty</span>
+                                <div class="pos-line-name-block">
+                                    <div class="pos-line-name">@item.Name</div>
+                                    <div class="pos-line-meta">@item.ItemType</div>
+                                </div>
+                                <div class="pos-line-total">@FormatMoney(item.LineTotal)</div>
+                            </div>
+                            <div class="pos-line-actions">
+                                <button type="button" class="pos-ghost-action" @onclick="() => SelectLine(item)">Edit</button>
+                                <button type="button" class="pos-ghost-action danger" @onclick="() => RemoveLineAsync(item.Id)" disabled="@IsBusy">Remove</button>
+                            </div>
+                        </article>
+                    }
+                }
+            </div>
+
+            <div class="pos-summary-box">
+                <div class="pos-summary-row">
+                    <span>Taxes</span>
+                    <strong>0 AED</strong>
+                </div>
+                <div class="pos-summary-row pos-summary-total">
+                    <span>Total</span>
+                    <strong>@InvoiceTotalSummary</strong>
+                </div>
+            </div>
+
+            <div class="pos-order-actions">
+                <button type="button" class="pos-mini-button" @onclick="StartNewSaleAsync" disabled="@IsBusy">New Sale</button>
+                <button type="button" class="pos-mini-button" @onclick="ReloadInvoiceAsync" disabled="@(IsBusy || CurrentInvoice is null)">Reload</button>
+                <button type="button" class="pos-mini-icon" @onclick="RefreshPosAsync">...</button>
+            </div>
+
+            <div class="pos-input-mode-row">
+                <button type="button" class="@(InputMode == "qty" ? "pos-keypad-mode active" : "pos-keypad-mode")" @onclick='@(() => SetInputMode("qty"))'>Qty</button>
+                <button type="button" class="@(InputMode == "price" ? "pos-keypad-mode active" : "pos-keypad-mode")" @onclick='@(() => SetInputMode("price"))'>Price</button>
+            </div>
+
+            @if (SelectedLine is not null)
+            {
+                <div class="pos-selected-line-panel">
+                    <div class="pos-section-title">Selected Line</div>
+                    <div class="pos-selected-line-name">@SelectedLine.Name</div>
+                    <div class="pos-selected-line-meta">@SelectedLine.ItemType</div>
+                    <div class="pos-payment-actions">
+                        <button type="button" class="pos-ghost-action" @onclick="ApplyLineUpdateAsync" disabled="@IsBusy">Apply Qty / Price</button>
+                        <button type="button" class="pos-ghost-action" @onclick="ClearLineSelection">Cancel Edit</button>
+                    </div>
+                </div>
+            }
+
+            <div class="pos-live-inputs">
+                <div class="pos-live-input-card">
+                    <span>Qty</span>
+                    <strong>@Quantity</strong>
+                </div>
+                <div class="pos-live-input-card">
+                    <span>Price</span>
+                    <strong>@FormatMoney(PriceValue)</strong>
+                </div>
+            </div>
+
+            <div class="pos-keypad-grid">
+                @foreach (var key in KeypadKeys)
+                {
+                    <button type="button" class="@(key.IsAction ? "pos-keypad-key action" : "pos-keypad-key")" @onclick="() => OnKeypadPressed(key.Value)">@key.Label</button>
+                }
+            </div>
+
+            @if (CurrentInvoice is not null)
+            {
+                <div class="pos-payment-panel">
+                    <div class="pos-section-title">Payment Desk</div>
+
+                    <div class="pos-payment-summary">
+                        <div class="pos-payment-metric">
+                            <span>Total</span>
+                            <strong>@FormatMoney(CurrentInvoice.Total)</strong>
+                        </div>
+                        <div class="pos-payment-metric">
+                            <span>Paid</span>
+                            <strong>@FormatMoney(CurrentInvoice.TotalPaid)</strong>
+                        </div>
+                        <div class="pos-payment-metric">
+                            <span>Remaining</span>
+                            <strong>@FormatMoney(CurrentInvoice.Remaining)</strong>
+                        </div>
+                    </div>
+
+                    @if (CanCollectPayment)
+                    {
+                        <div class="pos-payment-grid">
+                            <select class="form-input" @bind="PaymentMethod">
+                                <option value="1">Cash</option>
+                                <option value="2">Card</option>
+                                <option value="3">Bank Transfer</option>
+                                <option value="4">Online</option>
+                                <option value="5">Wallet</option>
+                            </select>
+                            <input class="form-input" type="number" step="0.01" min="0.01" @bind="PaymentAmount" placeholder="Amount" />
+                            <input class="form-input" @bind="PaymentReference" placeholder="Reference" />
+                        </div>
+
+                        <div class="pos-payment-actions">
+                            <button type="button" class="pos-ghost-action" @onclick="SetFullRemainingPayment" disabled="@IsBusy">Full Remaining</button>
+                            <button type="button" class="pos-ghost-action" @onclick="SetHalfRemainingPayment" disabled="@IsBusy">Half Remaining</button>
+                            <button type="button" class="pos-ghost-action" @onclick="AddPaymentAsync" disabled="@IsBusy">Record Payment</button>
+                        </div>
+                    }
+
+                    <div class="pos-receipt-preview-toggle">
+                        <button type="button" class="pos-ghost-action" @onclick="ToggleReceiptPreview" disabled="@(CurrentInvoice.Items.Count == 0)">@(ShowReceiptPreview ? "Hide Receipt" : "Show Receipt")</button>
+                        <button type="button" class="pos-ghost-action" @onclick="PrintReceiptAsync" disabled="@(IsBusy || CurrentInvoice.Items.Count == 0)">Print Receipt</button>
+                    </div>
+
+                    @if (ShowReceiptPreview)
+                    {
+                        <div class="pos-receipt-preview">
+                            <div class="pos-receipt-title">@CurrentInvoice.PrintSettings.ReceiptTitle</div>
+                            @if (CurrentInvoice.PrintSettings.ShowBranchNameOnReceipt)
+                            {
+                                <div class="pos-receipt-line">@BranchLabel</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(CurrentInvoice.CustomerName) && CurrentInvoice.PrintSettings.ShowCustomerNameOnReceipt)
+                            {
+                                <div class="pos-receipt-line">Customer: @CurrentInvoice.CustomerName</div>
+                            }
+                            <div class="pos-receipt-line">Invoice: @CurrentInvoice.InvoiceCode</div>
+                            <div class="pos-receipt-line">Items: @CurrentInvoice.Items.Count</div>
+                            <div class="pos-receipt-divider"></div>
+                            <div class="pos-receipt-row"><span>Total</span><strong>@FormatMoney(CurrentInvoice.Total)</strong></div>
+                            <div class="pos-receipt-row"><span>Paid</span><strong>@FormatMoney(CurrentInvoice.TotalPaid)</strong></div>
+                            <div class="pos-receipt-row"><span>Remaining</span><strong>@FormatMoney(CurrentInvoice.Remaining)</strong></div>
+                            @if (!string.IsNullOrWhiteSpace(CurrentInvoice.PrintSettings.ReceiptFooterNote))
+                            {
+                                <div class="pos-receipt-divider"></div>
+                                <div class="pos-receipt-footer">@CurrentInvoice.PrintSettings.ReceiptFooterNote</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            <button type="button" class="pos-payment-button" @onclick="HandlePrimaryPaymentActionAsync" disabled="@PrimaryPaymentDisabled">@PrimaryPaymentButtonLabel</button>
+        </aside>
+
+        <section class="pos-catalog-panel">
+            @if (PosViewMode == "orders")
+            {
+                <div class="pos-catalog-toolbar">
+                    <div class="pos-category-pills">
+                        <button type="button" class="pos-category-pill mixed active">Recent Orders</button>
+                    </div>
+
+                    <div class="pos-toolbar-stats">
+                        <span>@RecentInvoices.Count invoices</span>
+                        <span>@DraftInvoicesCount drafts</span>
+                        <span>@CashierStateLabel</span>
+                    </div>
+                </div>
+
+                <div class="pos-orders-toolbar">
+                    <input class="form-input" @bind="OrderSearchText" @bind:event="oninput" placeholder="Search by invoice code or customer" />
+                    <select class="form-input" @bind="OrderStatusFilter">
+                        <option value="all">All statuses</option>
+                        <option value="draft">Draft only</option>
+                        <option value="posted">Posted only</option>
+                        <option value="partiallypaid">Partially paid</option>
+                        <option value="paid">Paid</option>
+                    </select>
+                </div>
+
+                <div class="pos-orders-grid">
+                    @if (FilteredRecentInvoices.Count == 0)
+                    {
+                        <div class="pos-catalog-empty">No branch invoices are available yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var invoice in FilteredRecentInvoices)
+                        {
+                            <article class="pos-order-card @(CurrentInvoice?.Id == invoice.Id ? "selected" : string.Empty)">
+                                <div class="pos-order-card-top">
+                                    <div>
+                                        <div class="pos-order-card-code">@invoice.InvoiceCode</div>
+                                        <div class="pos-order-card-customer">@(string.IsNullOrWhiteSpace(invoice.CustomerName) ? "Walk-in" : invoice.CustomerName)</div>
+                                    </div>
+                                    <div class="pos-order-card-status">@invoice.Status</div>
+                                </div>
+                                <div class="pos-order-card-metrics">
+                                    <span>Total: @FormatMoney(invoice.Total)</span>
+                                    <span>Remaining: @FormatMoney(invoice.Remaining)</span>
+                                </div>
+                                <div class="pos-order-card-time">@invoice.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+                                <div class="pos-order-card-actions">
+                                    <button type="button" class="pos-ghost-action" @onclick="() => LoadInvoiceAsync(invoice.Id)">@(invoice.Status == "Draft" ? "Resume" : "Open")</button>
+                                </div>
+                            </article>
+                        }
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="pos-catalog-toolbar">
+                    <div class="pos-category-pills">
+                        <button type="button" class="@(CatalogMode == "product" ? "pos-category-pill active products" : "pos-category-pill products")" @onclick='@(() => SetCatalogMode("product"))'>Products</button>
+                        <button type="button" class="@(CatalogMode == "service" ? "pos-category-pill active services" : "pos-category-pill services")" @onclick='@(() => SetCatalogMode("service"))'>Services</button>
+                        <button type="button" class="@(CatalogMode == "all" ? "pos-category-pill active mixed" : "pos-category-pill mixed")" @onclick='@(() => SetCatalogMode("all"))'>All</button>
+                    </div>
+
+                    <div class="pos-toolbar-stats">
+                        <span>@ProductOptions.Count products</span>
+                        <span>@ServiceOptions.Count services</span>
+                        <span>@CashierStateLabel</span>
+                    </div>
+                </div>
+
+                <div class="pos-catalog-grid">
+                    @if (CatalogCards.Count == 0)
+                    {
+                        <div class="pos-catalog-empty">No sellable items match the current search.</div>
+                    }
+                    else
+                    {
+                        @foreach (var card in CatalogCards)
+                        {
+                            <button type="button" class="pos-product-card" @onclick="() => AddCatalogCardAsync(card)">
+                                <div class="pos-product-image">@card.Emoji</div>
+                                <div class="pos-product-name">@card.Title</div>
+                                <div class="pos-product-price">@card.PriceLabel</div>
+                                <div class="pos-product-accent @card.AccentClass"></div>
+                            </button>
+                        }
+                    }
+                </div>
+            }
+        </section>
+    </div>
+
+    @if (ShowRightMenu)
+    {
+        <aside class="pos-side-drawer">
+            <UserAccessCard ScopeLabel="Point Of Sale"
+                            TenantLabel="@SessionState.TenantSlug"
+                            BranchLabel="@BranchLabel"
+                            UserName="@SessionState.Username"
+                            RoleLabel="@RoleLabel"
+                            Compact="true"
+                            OnLogout="LogoutAsync" />
+            <div class="pos-side-drawer-title">AyaPOS</div>
+            <a class="pos-side-link" href="/workspace">Workspace</a>
+            <a class="pos-side-link" href="/pos">Point of Sale</a>
+            <a class="pos-side-link" href="/products">Products</a>
+            <a class="pos-side-link" href="/services">Services</a>
+            @if (SessionState.CanAccessCustomers)
+            {
+                <a class="pos-side-link" href="/customers">Customers</a>
+            }
+            @if (SessionState.CanAccessAppointments)
+            {
+                <a class="pos-side-link" href="/appointments">Appointments</a>
+            }
+            @if (SessionState.CanAccessExpenses)
+            {
+                <a class="pos-side-link" href="/expenses">Expenses</a>
+            }
+            <a class="pos-side-link" href="/cashier">Cashier Session</a>
+            <a class="pos-side-link" href="/invoices">Invoices</a>
+        </aside>
+    }
+
+    <ActionModal Visible="@ShowQuickCustomerModal"
+                 Eyebrow="Quick Customer"
+                 Title="Add customer inside POS"
+                 Description="Search an existing customer or create a new one without leaving the selling screen."
+                 OnClose="CloseQuickCustomerModal">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Existing Customer</span>
+                <h2>Search and apply to this sale</h2>
+            </div>
+            <p>Use the existing customer list first, then create a new customer only if the client is not already saved.</p>
+        </div>
+
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="posQuickCustomerSearch">Search Customer</label>
+                <input id="posQuickCustomerSearch" class="form-input" @bind="QuickCustomerSearchText" @bind:event="oninput" placeholder="Search by name or phone" />
+            </div>
+
+            <div class="field">
+                <label for="posQuickCustomerSelect">Existing Customer</label>
+                <select id="posQuickCustomerSelect" class="form-input" @bind="QuickCustomerSelectedCustomerId">
+                    <option value="">Select an existing customer</option>
+                    @foreach (var customer in FilteredQuickCustomerOptions)
+                    {
+                        <option value="@customer.Id">@customer.FullName (@(string.IsNullOrWhiteSpace(customer.Phone) ? "No phone" : customer.Phone))</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="invoice-actions">
+            <button type="button" class="ghost-button" @onclick="ApplyExistingCustomerFromModalAsync" disabled="@IsBusy">Use Existing Customer</button>
+        </div>
+
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">New Customer</span>
+                <h2>Create a customer from POS</h2>
+            </div>
+            <p>This creates a customer under the current tenant and immediately makes it available for the current sale.</p>
+        </div>
+
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="posQuickCustomerName">Full Name</label>
+                <input id="posQuickCustomerName" class="form-input" @bind="QuickCustomerModel.FullName" />
+            </div>
+
+            <div class="field">
+                <label for="posQuickCustomerPhone">Phone</label>
+                <input id="posQuickCustomerPhone" class="form-input" @bind="QuickCustomerModel.Phone" />
+            </div>
+
+            <div class="field">
+                <label for="posQuickCustomerEmail">Email</label>
+                <input id="posQuickCustomerEmail" class="form-input" @bind="QuickCustomerModel.Email" />
+            </div>
+
+            <div class="field">
+                <label for="posQuickCustomerNotes">Notes</label>
+                <input id="posQuickCustomerNotes" class="form-input" @bind="QuickCustomerModel.Notes" />
+            </div>
+        </div>
+
+        <div class="invoice-actions">
+            <button type="button" class="submit-button" @onclick="CreateQuickCustomerAsync" disabled="@IsBusy">Create Customer In POS</button>
+            <button type="button" class="ghost-button" @onclick="CloseQuickCustomerModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@ShowFinalizeSaleModal"
+                 Eyebrow="Finalize Sale"
+                 Title="Finalize the current draft sale"
+                 Description="This confirms the draft is ready to leave edit mode and move into the payment stage. Payment entry itself stays in the main POS screen."
+                 OnClose="CloseFinalizeSaleModal">
+        <div class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Invoice</span>
+                <strong class="metric-value">@DraftStateLabel</strong>
+                <span class="metric-note">Current draft reference inside the branch POS workspace.</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">Lines</span>
+                <strong class="metric-value">@ItemCountSummary</strong>
+                <span class="metric-note">All current product and service lines that will be locked into the invoice.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Total</span>
+                <strong class="metric-value">@InvoiceTotalSummary</strong>
+                <span class="metric-note">This becomes the amount due after finalization.</span>
+            </article>
+        </div>
+
+        <div class="invoice-actions">
+            <button type="button" class="submit-button" @onclick="FinalizeInvoiceAsync" disabled="@IsBusy">Finalize Sale</button>
+            <button type="button" class="ghost-button" @onclick="CloseFinalizeSaleModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+</div>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool ShowRightMenu { get; set; }
+    private bool ShowQuickCustomerModal { get; set; }
+    private bool ShowFinalizeSaleModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private string SelectedCustomerId { get; set; } = string.Empty;
+    private string SelectedSourceType { get; set; } = "Product";
+    private string SelectedItemId { get; set; } = string.Empty;
+    private Guid? SelectedLineId { get; set; }
+    private int Quantity { get; set; } = 1;
+    private decimal PriceValue { get; set; }
+    private string PosViewMode { get; set; } = "register";
+    private string CatalogMode { get; set; } = "all";
+    private string CatalogSearchText { get; set; } = string.Empty;
+    private string OrderSearchText { get; set; } = string.Empty;
+    private string OrderStatusFilter { get; set; } = "all";
+    private string InputMode { get; set; } = "qty";
+    private string QuickCustomerSearchText { get; set; } = string.Empty;
+    private string QuickCustomerSelectedCustomerId { get; set; } = string.Empty;
+    private bool ShowReceiptPreview { get; set; }
+    private int PaymentMethod { get; set; } = 1;
+    private decimal PaymentAmount { get; set; }
+    private string PaymentReference { get; set; } = string.Empty;
+    private CashierSessionModel? CurrentSession { get; set; }
+    private InvoiceDetailsModel? CurrentInvoice { get; set; }
+    private CreateCustomerRequestModel QuickCustomerModel { get; set; } = new();
+    private List<CustomerListItemModel> CustomerOptions { get; set; } = [];
+    private List<ProductListItemModel> ProductOptions { get; set; } = [];
+    private List<ServiceListItemModel> ServiceOptions { get; set; } = [];
+    private List<InvoiceListItemModel> RecentInvoices { get; set; } = [];
+
+    private string BranchLabel => string.IsNullOrWhiteSpace(SessionState.BranchName) ? "Current Branch" : SessionState.BranchName;
+    private string BranchShortCode => string.IsNullOrWhiteSpace(SessionState.BranchName) ? "BR" : SessionState.BranchName[..Math.Min(2, SessionState.BranchName.Length)].ToUpperInvariant();
+    private string UserInitial => string.IsNullOrWhiteSpace(SessionState.Username) ? "A" : SessionState.Username[..1].ToUpperInvariant();
+    private string RoleLabel => string.IsNullOrWhiteSpace(SessionState.Role) ? "Branch User" : SessionState.Role.Replace("_", " ");
+    private string PosTitle => string.IsNullOrWhiteSpace(SessionState.BranchName)
+        ? "Branch point-of-sale workspace"
+        : $"{SessionState.BranchName} point-of-sale workspace";
+    private string PosDescription => "This screen is for branch operations only: live sales, invoice building, and cashier flow.";
+    private string CashierStateLabel => CurrentSession is null ? "Not Opened" : CurrentSession.IsClosed ? "Closed" : "Open";
+    private string CashierStateNote => CurrentSession is null
+        ? "Open the cashier session before collecting payments."
+        : CurrentSession.IsClosed
+            ? "The latest cashier session is already closed."
+            : $"Expected cash: {FormatMoney(CurrentSession.ExpectedCashCents / 100m)}";
+    private string DraftReferenceLabel => CurrentInvoice is null
+        ? "1001"
+        : string.IsNullOrWhiteSpace(CurrentInvoice.InvoiceCode)
+            ? CurrentInvoice.Id.ToString()[..4].ToUpperInvariant()
+            : CurrentInvoice.InvoiceCode;
+    private string DraftStateLabel => CurrentInvoice is null ? "No Draft" : CurrentInvoice.InvoiceCode;
+    private string DraftStateNote => CurrentInvoice is null
+        ? "Create a draft invoice to begin the sale."
+        : $"{CurrentInvoice.Items.Count} line(s) | Status: {CurrentInvoice.Status}";
+    private string CurrentInvoiceStatusLabel => CurrentInvoice?.Status ?? "Draft pending";
+    private string ItemCountSummary => CurrentInvoice is null ? "0 lines" : $"{CurrentInvoice.Items.Count} line(s)";
+    private string InvoiceTotalSummary => CurrentInvoice is null ? "0 AED" : FormatMoney(CurrentInvoice.Total);
+    private string RemainingSummary => CurrentInvoice is null ? "0 AED" : FormatMoney(CurrentInvoice.Remaining);
+    private InvoiceItemModel? SelectedLine => CurrentInvoice?.Items.FirstOrDefault(x => x.Id == SelectedLineId);
+    private int DraftInvoicesCount => RecentInvoices.Count(x => string.Equals(x.Status, "Draft", StringComparison.OrdinalIgnoreCase));
+    private IReadOnlyList<CustomerListItemModel> FilteredQuickCustomerOptions
+        => string.IsNullOrWhiteSpace(QuickCustomerSearchText)
+            ? CustomerOptions
+            : CustomerOptions
+                .Where(customer =>
+                    customer.FullName.Contains(QuickCustomerSearchText.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(customer.Phone) && customer.Phone.Contains(QuickCustomerSearchText.Trim(), StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+    private IReadOnlyList<InvoiceListItemModel> FilteredRecentInvoices => RecentInvoices
+        .Where(MatchesOrderStatus)
+        .Where(MatchesOrderSearch)
+        .ToList();
+    private bool CanFinalizeInvoice => CurrentInvoice is not null && CurrentInvoice.Items.Count > 0 && CurrentInvoice.Status == "Draft";
+    private bool CanCollectPayment => CurrentInvoice is not null && (CurrentInvoice.Status is "Posted" or "PartiallyPaid") && CurrentInvoice.Remaining > 0;
+    private string PrimaryPaymentButtonLabel => CanFinalizeInvoice ? "Finalize Sale" : CanCollectPayment ? "Collect Payment" : "Payment";
+    private bool PrimaryPaymentDisabled => IsBusy || CurrentInvoice is null || (CurrentInvoice.Items.Count == 0) || (!CanFinalizeInvoice && !CanCollectPayment);
+    private IReadOnlyList<ItemOption> CurrentOptions => SelectedSourceType == "Service"
+        ? ServiceOptions.Select(MapService).ToList()
+        : ProductOptions.Select(MapProduct).ToList();
+    private IReadOnlyList<PosCard> QuickSellCards => BuildQuickSellCards();
+    private IReadOnlyList<CatalogCard> CatalogCards => BuildCatalogCards();
+    private IReadOnlyList<KeypadKey> KeypadKeys => BuildKeypad();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+
+        try
+        {
+            await SessionState.InitializeAsync();
+
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            if (!SessionState.CanAccessPos)
+            {
+                NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+                return;
+            }
+
+            await LoadPosAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadPosAsync()
+    {
+        ErrorMessage = string.Empty;
+        var errors = new List<string>();
+
+        try
+        {
+            var customers = await CustomersApiClient.GetCustomersAsync(SessionState, null, 1, 100);
+            CustomerOptions = customers.Items.Where(x => x.IsActive).OrderBy(x => x.FullName).ToList();
+        }
+        catch (Exception ex)
+        {
+            CustomerOptions = [];
+            errors.Add(ex.Message);
+        }
+
+        try
+        {
+            var products = await ProductsApiClient.GetProductsAsync(SessionState, null, 1, 100);
+            ProductOptions = products.Items.Where(x => x.IsActive).OrderBy(x => GetProductDisplayName(x)).ToList();
+        }
+        catch (Exception ex)
+        {
+            ProductOptions = [];
+            errors.Add(ex.Message);
+        }
+
+        try
+        {
+            var services = await ServicesApiClient.GetServicesAsync(SessionState, null, 1, 100);
+            ServiceOptions = services.Items.Where(x => x.IsActive).OrderBy(x => GetServiceDisplayName(x)).ToList();
+        }
+        catch (Exception ex)
+        {
+            ServiceOptions = [];
+            errors.Add(ex.Message);
+        }
+
+        try
+        {
+            var invoices = await InvoicesApiClient.GetInvoicesAsync(SessionState, null, null, 1, 20);
+            RecentInvoices = invoices.Items
+                .OrderByDescending(x => x.CreatedAt)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            RecentInvoices = [];
+            errors.Add(ex.Message);
+        }
+
+        try
+        {
+            CurrentSession = await CashierApiClient.GetCurrentSessionAsync(SessionState);
+        }
+        catch
+        {
+            CurrentSession = null;
+        }
+
+        if (CurrentInvoice is not null)
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+
+        ErrorMessage = errors.Count == 0 ? string.Empty : string.Join(" | ", errors.Distinct());
+    }
+
+    private async Task RefreshPosAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await LoadPosAsync();
+            FlashMessage = "POS refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ToggleRightMenu() => ShowRightMenu = !ShowRightMenu;
+    private void OpenQuickCustomerModal()
+    {
+        QuickCustomerSearchText = string.Empty;
+        QuickCustomerSelectedCustomerId = SelectedCustomerId;
+        ShowQuickCustomerModal = true;
+    }
+
+    private Task CloseQuickCustomerModal()
+    {
+        ShowQuickCustomerModal = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task ApplyExistingCustomerFromModalAsync()
+    {
+        if (!Guid.TryParse(QuickCustomerSelectedCustomerId, out var selectedCustomerId))
+        {
+            ErrorMessage = "Select an existing customer first.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        SelectedCustomerId = selectedCustomerId.ToString();
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            if (CurrentInvoice is not null && string.Equals(CurrentInvoice.Status, "Draft", StringComparison.OrdinalIgnoreCase))
+                await ApplyCustomerToCurrentInvoiceAsync(false);
+
+            ShowQuickCustomerModal = false;
+            FlashMessage = "Customer applied from POS popup successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OpenFinalizeSaleModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowFinalizeSaleModal = true;
+    }
+
+    private Task CloseFinalizeSaleModal()
+    {
+        ShowFinalizeSaleModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void SetPosViewMode(string mode) => PosViewMode = mode;
+
+    private void SetCatalogMode(string mode) => CatalogMode = mode;
+
+    private void SetInputMode(string mode) => InputMode = mode;
+
+    private Task OnSourceTypeChangedAsync()
+    {
+        SelectedItemId = string.Empty;
+        PriceValue = 0;
+        return Task.CompletedTask;
+    }
+
+    private Task OnSelectedItemChangedAsync()
+    {
+        SyncPriceFromSelection();
+        return Task.CompletedTask;
+    }
+
+    private async Task AddCatalogCardAsync(CatalogCard card)
+    {
+        if (CurrentInvoice is null)
+            await CreateDraftAsync();
+
+        if (CurrentInvoice is null)
+            return;
+
+        SelectedSourceType = card.ItemType;
+        SelectedItemId = card.ItemId.ToString();
+        PriceValue = card.Price;
+
+        if (Quantity <= 0)
+            Quantity = 1;
+
+        await AddLineAsync();
+    }
+
+    private async Task CreateDraftAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            Guid? customerId = null;
+            if (!string.IsNullOrWhiteSpace(SelectedCustomerId) && Guid.TryParse(SelectedCustomerId, out var parsedCustomerId))
+                customerId = parsedCustomerId;
+
+            var invoiceId = await InvoicesApiClient.CreateDraftAsync(SessionState, new CreateInvoiceRequestModel { CustomerId = customerId });
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, invoiceId);
+            PosViewMode = "register";
+            PaymentAmount = 0;
+            PaymentReference = string.Empty;
+            ShowReceiptPreview = false;
+            ClearLineSelection();
+            FlashMessage = "Draft invoice created successfully.";
+            await LoadRecentInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateQuickCustomerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(QuickCustomerModel.FullName) || string.IsNullOrWhiteSpace(QuickCustomerModel.Phone))
+        {
+            ErrorMessage = "Customer name and phone are required.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            var customerId = await CustomersApiClient.CreateCustomerAsync(SessionState, QuickCustomerModel);
+            await LoadPosAsync();
+            SelectedCustomerId = customerId.ToString();
+            QuickCustomerSelectedCustomerId = customerId.ToString();
+            if (CurrentInvoice is not null && string.Equals(CurrentInvoice.Status, "Draft", StringComparison.OrdinalIgnoreCase))
+                await ApplyCustomerToCurrentInvoiceAsync(false);
+            QuickCustomerModel = new CreateCustomerRequestModel();
+            QuickCustomerSearchText = string.Empty;
+            ShowQuickCustomerModal = false;
+            FlashMessage = "Customer created and selected inside POS.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task AddLineAsync()
+    {
+        if (CurrentInvoice is null)
+        {
+            ErrorMessage = "Create the draft invoice first.";
+            return;
+        }
+
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        if (!Guid.TryParse(SelectedItemId, out var itemId))
+        {
+            ErrorMessage = "Select a product or service first.";
+            return;
+        }
+
+        if (Quantity <= 0)
+        {
+            ErrorMessage = "Quantity must be greater than zero.";
+            return;
+        }
+
+        IsBusy = true;
+
+        try
+        {
+            var cents = (int)Math.Round(PriceValue * 100m, MidpointRounding.AwayFromZero);
+            await InvoicesApiClient.AddItemAsync(SessionState, CurrentInvoice.Id, new AddInvoiceLineRequestModel
+            {
+                ItemType = SelectedSourceType,
+                ItemId = itemId,
+                Qty = Quantity,
+                PriceOverrideCents = cents,
+                PriceOverrideReason = "POS screen"
+            });
+
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            FlashMessage = "Item added to draft successfully.";
+            Quantity = 1;
+            SelectedItemId = string.Empty;
+            PriceValue = 0;
+            ClearLineSelection();
+            await LoadRecentInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ApplyCustomerToCurrentInvoiceAsync()
+        => await ApplyCustomerToCurrentInvoiceAsync(true);
+
+    private async Task ApplyCustomerToCurrentInvoiceAsync(bool showFlashMessage)
+    {
+        if (CurrentInvoice is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        if (showFlashMessage)
+            FlashMessage = string.Empty;
+
+        try
+        {
+            Guid? customerId = null;
+            if (!string.IsNullOrWhiteSpace(SelectedCustomerId) && Guid.TryParse(SelectedCustomerId, out var parsedCustomerId))
+                customerId = parsedCustomerId;
+
+            await InvoicesApiClient.SetCustomerAsync(SessionState, CurrentInvoice.Id, new SetInvoiceCustomerRequestModel
+            {
+                CustomerId = customerId
+            });
+
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            if (showFlashMessage)
+                FlashMessage = customerId is null
+                    ? "Customer removed from the current draft."
+                    : "Customer linked to the current draft.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ReloadInvoiceAsync()
+    {
+        if (CurrentInvoice is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            FlashMessage = "Draft invoice refreshed successfully.";
+            if (SelectedLineId is not null && SelectedLine is null)
+                ClearLineSelection();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task FinalizeInvoiceAsync()
+    {
+        if (CurrentInvoice is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await InvoicesApiClient.FinalizeAsync(SessionState, CurrentInvoice.Id);
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            ShowFinalizeSaleModal = false;
+            FlashMessage = "Invoice finalized successfully.";
+            if (CurrentInvoice.Remaining > 0)
+                PaymentAmount = CurrentInvoice.Remaining;
+            ClearLineSelection();
+            await LoadRecentInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task HandlePrimaryPaymentActionAsync()
+    {
+        if (CanFinalizeInvoice)
+        {
+            OpenFinalizeSaleModal();
+            return;
+        }
+
+        if (CanCollectPayment)
+        {
+            if (PaymentAmount <= 0)
+                SetFullRemainingPayment();
+
+            await AddPaymentAsync();
+        }
+    }
+
+    private async Task AddPaymentAsync()
+    {
+        if (!CanCollectPayment || CurrentInvoice is null)
+            return;
+
+        if (PaymentAmount <= 0)
+        {
+            ErrorMessage = "Payment amount must be greater than zero.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            var cents = (int)Math.Round(PaymentAmount * 100m, MidpointRounding.AwayFromZero);
+            CurrentInvoice = await InvoicesApiClient.AddPaymentAsync(SessionState, CurrentInvoice.Id, new AddPaymentRequestModel
+            {
+                Method = PaymentMethod,
+                AmountCents = cents,
+                Reference = string.IsNullOrWhiteSpace(PaymentReference) ? null : PaymentReference.Trim()
+            });
+
+            FlashMessage = "Payment recorded successfully.";
+            PaymentReference = string.Empty;
+            PaymentAmount = CurrentInvoice.Remaining > 0 ? CurrentInvoice.Remaining : 0;
+            ShowReceiptPreview = true;
+
+            if (CurrentInvoice.PrintSettings.AutoPrintReceiptAfterPayment)
+                await PrintReceiptAsync();
+
+            await LoadRecentInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SetFullRemainingPayment()
+    {
+        if (CurrentInvoice is null)
+            return;
+
+        PaymentAmount = CurrentInvoice.Remaining;
+    }
+
+    private void SetHalfRemainingPayment()
+    {
+        if (CurrentInvoice is null)
+            return;
+
+        PaymentAmount = Math.Round(CurrentInvoice.Remaining / 2m, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private void ToggleReceiptPreview() => ShowReceiptPreview = !ShowReceiptPreview;
+
+    private async Task StartNewSaleAsync()
+    {
+        if (CurrentInvoice is not null && CurrentInvoice.Status == "Draft")
+        {
+            PosViewMode = "orders";
+            FlashMessage = "Current draft is saved. You can resume it from Orders.";
+            ErrorMessage = string.Empty;
+            CurrentInvoice = null;
+            SelectedCustomerId = string.Empty;
+            PaymentAmount = 0;
+            PaymentReference = string.Empty;
+            ShowReceiptPreview = false;
+            await LoadRecentInvoicesAsync();
+            return;
+        }
+
+        CurrentInvoice = null;
+        SelectedCustomerId = string.Empty;
+        PaymentAmount = 0;
+        PaymentReference = string.Empty;
+        ShowReceiptPreview = false;
+        PosViewMode = "register";
+        ErrorMessage = string.Empty;
+        FlashMessage = "Ready for a new sale.";
+    }
+
+    private async Task LoadInvoiceAsync(Guid invoiceId)
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, invoiceId);
+            SelectedCustomerId = CurrentInvoice.CustomerId?.ToString() ?? string.Empty;
+            PaymentAmount = CurrentInvoice.Remaining > 0 ? CurrentInvoice.Remaining : 0;
+            PaymentReference = string.Empty;
+            ShowReceiptPreview = false;
+            ClearLineSelection();
+            PosViewMode = "register";
+            FlashMessage = CurrentInvoice.Status == "Draft"
+                ? "Draft resumed successfully."
+                : "Invoice loaded successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task LoadRecentInvoicesAsync()
+    {
+        var result = await InvoicesApiClient.GetInvoicesAsync(SessionState, null, null, 1, 20);
+        RecentInvoices = result.Items
+            .OrderByDescending(x => x.CreatedAt)
+            .ToList();
+    }
+
+    private void SelectLine(InvoiceItemModel item)
+    {
+        SelectedLineId = item.Id;
+        Quantity = item.Qty;
+        PriceValue = item.UnitPrice;
+        InputMode = "qty";
+        ErrorMessage = string.Empty;
+        FlashMessage = $"Editing line: {item.Name}";
+    }
+
+    private void ClearLineSelection()
+    {
+        SelectedLineId = null;
+        Quantity = 1;
+        PriceValue = 0;
+    }
+
+    private void ClearSelectedCustomer()
+    {
+        SelectedCustomerId = string.Empty;
+        FlashMessage = "Customer cleared from the current POS selection.";
+        ErrorMessage = string.Empty;
+    }
+
+    private async Task ApplyLineUpdateAsync()
+    {
+        if (CurrentInvoice is null || SelectedLine is null)
+            return;
+
+        if (Quantity <= 0)
+        {
+            ErrorMessage = "Quantity must be greater than zero.";
+            FlashMessage = string.Empty;
+            return;
+        }
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await InvoicesApiClient.UpdateItemAsync(SessionState, CurrentInvoice.Id, SelectedLine.Id, new UpdateInvoiceLineRequestModel
+            {
+                Qty = Quantity,
+                PriceOverrideCents = (int)Math.Round(PriceValue * 100m, MidpointRounding.AwayFromZero),
+                PriceOverrideReason = "POS line edit"
+            });
+
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            FlashMessage = "Invoice line updated successfully.";
+            ClearLineSelection();
+            await LoadRecentInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RemoveLineAsync(Guid lineId)
+    {
+        if (CurrentInvoice is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await InvoicesApiClient.RemoveItemAsync(SessionState, CurrentInvoice.Id, lineId);
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            FlashMessage = "Invoice line removed successfully.";
+
+            if (SelectedLineId == lineId)
+                ClearLineSelection();
+
+            await LoadRecentInvoicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool MatchesOrderStatus(InvoiceListItemModel invoice)
+    {
+        if (string.Equals(OrderStatusFilter, "all", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return string.Equals(invoice.Status.Replace("_", string.Empty), OrderStatusFilter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool MatchesOrderSearch(InvoiceListItemModel invoice)
+    {
+        if (string.IsNullOrWhiteSpace(OrderSearchText))
+            return true;
+
+        var term = OrderSearchText.Trim();
+
+        return (!string.IsNullOrWhiteSpace(invoice.InvoiceCode) && invoice.InvoiceCode.Contains(term, StringComparison.OrdinalIgnoreCase))
+               || (!string.IsNullOrWhiteSpace(invoice.CustomerName) && invoice.CustomerName.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task PrintReceiptAsync()
+    {
+        if (CurrentInvoice is null || CurrentInvoice.Items.Count == 0)
+            return;
+
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+
+    private void OnKeypadPressed(string value)
+    {
+        if (value == "clear")
+        {
+            if (InputMode == "qty")
+                Quantity = 1;
+            else
+                PriceValue = 0;
+
+            return;
+        }
+
+        if (value == "back")
+        {
+            if (InputMode == "qty")
+            {
+                var text = Quantity.ToString();
+                text = text.Length > 1 ? text[..^1] : "0";
+                Quantity = int.TryParse(text, out var parsedQty) ? Math.Max(parsedQty, 0) : 0;
+            }
+            else
+            {
+                var text = PriceValue.ToString("0.##");
+                text = text.Length > 1 ? text[..^1] : "0";
+                PriceValue = decimal.TryParse(text, out var parsedPrice) ? Math.Max(parsedPrice, 0) : 0;
+            }
+
+            return;
+        }
+
+        if (InputMode == "qty")
+        {
+            var nextQty = $"{(Quantity <= 0 ? string.Empty : Quantity.ToString())}{value}";
+            if (int.TryParse(nextQty, out var qty))
+                Quantity = qty;
+
+            return;
+        }
+
+        var current = PriceValue <= 0 ? string.Empty : PriceValue.ToString("0.##");
+        if (value == "." && current.Contains('.'))
+            return;
+
+        var nextPrice = string.IsNullOrWhiteSpace(current) && value == "." ? "0." : $"{current}{value}";
+        if (decimal.TryParse(nextPrice, out var price))
+            PriceValue = price;
+    }
+
+    private void SyncPriceFromSelection()
+    {
+        if (!Guid.TryParse(SelectedItemId, out var itemId))
+            return;
+
+        if (SelectedSourceType == "Service")
+        {
+            var service = ServiceOptions.FirstOrDefault(x => x.Id == itemId);
+            if (service is not null)
+                PriceValue = service.Price;
+
+            return;
+        }
+
+        var product = ProductOptions.FirstOrDefault(x => x.Id == itemId);
+        if (product?.SellPrice is not null)
+            PriceValue = product.SellPrice.Value;
+    }
+
+    private IReadOnlyList<CatalogCard> BuildCatalogCards()
+    {
+        var cards = new List<CatalogCard>();
+        var search = CatalogSearchText.Trim();
+
+        if (CatalogMode is "product" or "all")
+        {
+            cards.AddRange(ProductOptions
+                .Where(product => MatchesSearch(GetProductDisplayName(product), product.Sku, search))
+                .Select(product => new CatalogCard(
+                    product.Id,
+                    "Product",
+                    GetProductDisplayName(product),
+                    product.SellPrice ?? 0,
+                    FormatProductPrice(product),
+                    PickEmoji(GetProductDisplayName(product)),
+                    PickAccent(GetProductDisplayName(product)))));
+        }
+
+        if (CatalogMode is "service" or "all")
+        {
+            cards.AddRange(ServiceOptions
+                .Where(service => MatchesSearch(GetServiceDisplayName(service), null, search))
+                .Select(service => new CatalogCard(
+                    service.Id,
+                    "Service",
+                    GetServiceDisplayName(service),
+                    service.Price,
+                    FormatServicePrice(service),
+                    "S",
+                    "accent-blue")));
+        }
+
+        return cards.OrderBy(card => card.Title).ToList();
+    }
+
+    private IReadOnlyList<PosCard> BuildQuickSellCards()
+    {
+        var cards = new List<PosCard>();
+
+        foreach (var product in ProductOptions.Take(3))
+        {
+            cards.Add(new PosCard(
+                "PRODUCT",
+                GetProductDisplayName(product),
+                product.SellPrice is null ? "Price pending" : $"{product.SellPrice:0.##} {product.CurrencyCode}",
+                "Ready for quick sale from the product catalog."));
+        }
+
+        foreach (var service in ServiceOptions.Take(3))
+        {
+            cards.Add(new PosCard(
+                "SERVICE",
+                GetServiceDisplayName(service),
+                service.Price > 0 ? $"{service.Price:0.##} {service.CurrencyCode}" : "Price pending",
+                $"Duration: {FormatDuration(service.DurationMin)}"));
+        }
+
+        return cards;
+    }
+
+    private static bool MatchesSearch(string name, string? code, string search)
+        => string.IsNullOrWhiteSpace(search)
+           || name.Contains(search, StringComparison.OrdinalIgnoreCase)
+           || (!string.IsNullOrWhiteSpace(code) && code.Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlyList<KeypadKey> BuildKeypad()
+        =>
+        [
+            new("1", "1"),
+            new("2", "2"),
+            new("3", "3"),
+            new("4", "4"),
+            new("5", "5"),
+            new("6", "6"),
+            new("7", "7"),
+            new("8", "8"),
+            new("9", "9"),
+            new("+/-", "clear", true),
+            new("0", "0"),
+            new(".", ".", true),
+            new("Del", "back", true)
+        ];
+
+    private static string PickEmoji(string name)
+    {
+        var lower = name.ToLowerInvariant();
+
+        if (lower.Contains("shirt") || lower.Contains("lashes"))
+            return "P";
+
+        if (lower.Contains("jean") || lower.Contains("pant"))
+            return "J";
+
+        if (lower.Contains("shoe"))
+            return "S";
+
+        if (lower.Contains("hat"))
+            return "H";
+
+        return "Item";
+    }
+
+    private static string PickAccent(string name)
+    {
+        var seed = Math.Abs(name.GetHashCode()) % 4;
+        return seed switch
+        {
+            0 => "accent-pink",
+            1 => "accent-coral",
+            2 => "accent-blue",
+            _ => "accent-gold"
+        };
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private static ItemOption MapProduct(ProductListItemModel product)
+        => new(product.Id, $"{GetProductDisplayName(product)} - {FormatProductPrice(product)}");
+
+    private static ItemOption MapService(ServiceListItemModel service)
+        => new(service.Id, $"{GetServiceDisplayName(service)} - {FormatServicePrice(service)}");
+
+    private static string FormatProductPrice(ProductListItemModel product)
+        => product.SellPrice is null ? "Price pending" : $"{product.SellPrice:0.##} {product.CurrencyCode}";
+
+    private static string FormatServicePrice(ServiceListItemModel service)
+        => service.Price > 0 ? $"{service.Price:0.##} {service.CurrencyCode}" : "Price pending";
+
+    private static string FormatDuration(int? minutes)
+        => minutes is null || minutes <= 0 ? "Pending" : $"{minutes.Value} min";
+
+    private static string FormatMoney(decimal amount) => $"{amount:0.##} AED";
+
+    private static string GetProductDisplayName(ProductListItemModel product)
+        => !string.IsNullOrWhiteSpace(product.NameEn)
+            ? product.NameEn
+            : !string.IsNullOrWhiteSpace(product.Sku)
+                ? $"Product {product.Sku}"
+                : "Unnamed product";
+
+    private static string GetServiceDisplayName(ServiceListItemModel service)
+        => !string.IsNullOrWhiteSpace(service.NameEn)
+            ? service.NameEn
+            : $"Service {service.Id.ToString()[..8].ToUpperInvariant()}";
+
+    private sealed record ItemOption(Guid Id, string Label);
+
+    private sealed record PosCard(
+        string Badge,
+        string Title,
+        string Value,
+        string Description);
+
+    private sealed record CatalogCard(
+        Guid ItemId,
+        string ItemType,
+        string Title,
+        decimal Price,
+        string PriceLabel,
+        string Emoji,
+        string AccentClass);
+
+    private sealed record KeypadKey(
+        string Label,
+        string Value,
+        bool IsAction = false);
+}

@@ -1,0 +1,2459 @@
+@page "/tenant-admin"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Owner
+@using Ayapos.EndUser.Models.Products
+@using Ayapos.EndUser.Models.Staff
+@using Ayapos.EndUser.Models.Services
+@using Microsoft.AspNetCore.Components.Forms
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.TenantAdmin
+@using Ayapos.EndUser.Services.Ui
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject TenantAdminApiClient TenantAdminApiClient
+@inject UiLanguageState UiLanguage
+
+<PageTitle>@UiLanguage.Text("Tenant Admin", "إدارة التنت")</PageTitle>
+
+<div class="products-page">
+    <header class="products-header">
+        <div>
+            <span class="eyebrow">@UiLanguage.Text("Tenant Admin", "إدارة التنت")</span>
+            <h1>@UiLanguage.Text("Branches, branch users, and daily tenant operations", "الفروع، مستخدمو الفروع، والعمليات اليومية للتنت")</h1>
+            <p>@UiLanguage.Text("Manage the current tenant branches and branch-level users without opening the platform owner console.", "أدر فروع التنت الحالية ومستخدمي مستوى الفرع بدون الحاجة لفتح لوحة المالك.")</p>
+        </div>
+
+        <UserAccessCard ScopeLabel="@UiLanguage.Text("Tenant Admin", "إدارة التنت")"
+                        TenantLabel="@(TenantSummary?.Name ?? SessionState.TenantSlug)"
+                        UserName="@SessionState.Username"
+                        RoleLabel="@UiLanguage.Text("Tenant Admin", "مدير التنت")"
+                        LogoutText="@UiLanguage.Text("Sign Out", "تسجيل الخروج")"
+                        OnLogout="SignOutAsync" />
+    </header>
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    @if (TenantSummary is not null)
+    {
+        <section class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">@UiLanguage.Text("Tenant", "التنت")</span>
+                <strong class="metric-value">@TenantSummary.Name</strong>
+                <span class="metric-note">@TenantSummary.Slug</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">@UiLanguage.Text("Licensed Seats", "المقاعد المرخصة")</span>
+                <strong class="metric-value">@TenantSummary.MaxUsers</strong>
+                <span class="metric-note">@UiLanguage.Text("Maximum users allowed under this tenant license.", "أقصى عدد مستخدمين مسموح به تحت رخصة هذا التنت.")</span>
+            </article>
+
+            <article class="metric-card">
+                <span class="metric-label">@UiLanguage.Text("Assigned Users", "المستخدمون المعينون")</span>
+                <strong class="metric-value">@TenantSummary.AssignedUsers</strong>
+                <span class="metric-note">@UiLanguage.Text("Users already assigned under this tenant.", "المستخدمون المعينون حاليًا تحت هذا التنت.")</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">@UiLanguage.Text("License", "الرخصة")</span>
+                <strong class="metric-value">@TenantSummary.LicensePlan</strong>
+                <span class="metric-note">@UiLanguage.Text("Status", "الحالة"): @TenantSummary.LicenseStatus @UiLanguage.Text("until", "حتى") @TenantSummary.LicenseExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</span>
+            </article>
+        </section>
+    }
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">@UiLanguage.Text("Create Branch", "إنشاء فرع")</span>
+                <h2>@UiLanguage.Text("Add a branch under this tenant", "إضافة فرع تحت هذا التنت")</h2>
+            </div>
+            <p>@UiLanguage.Text("Create an operational branch workspace. Each branch is provisioned with its own POS invoice sequence, appointments scope, print settings, and later can carry users, expenses, and day-to-day branch activity.", "أنشئ مساحة عمل تشغيلية للفرع. كل فرع يملك تسلسل فواتير POS خاصًا به ونطاق مواعيد وإعدادات طباعة، ويمكنه لاحقًا حمل المستخدمين والمصروفات والنشاط اليومي.")</p>
+        </div>
+
+        <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                <label for="tenantBranchName">@UiLanguage.Text("Branch Name", "اسم الفرع")</label>
+                <input id="tenantBranchName" class="form-input" @bind="CreateBranchModel.Name" />
+            </div>
+
+            <div class="field">
+                <label for="tenantBranchCode">@UiLanguage.Text("Branch Code", "كود الفرع")</label>
+                <input id="tenantBranchCode" class="form-input" @bind="CreateBranchModel.Code" />
+            </div>
+
+            <div class="field">
+                <label for="tenantBranchCurrency">@UiLanguage.Text("Currency", "العملة")</label>
+                <input id="tenantBranchCurrency" class="form-input" @bind="CreateBranchModel.CurrencyCode" />
+            </div>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="submit-button" @onclick="CreateBranchAsync" disabled="@IsBusy">@UiLanguage.Text("Create Branch", "إنشاء الفرع")</button>
+            <button class="ghost-button" @onclick="RefreshDashboardAsync" disabled="@IsBusy">@UiLanguage.Text("Refresh Dashboard", "تحديث اللوحة")</button>
+        </div>
+    </section>
+
+    <section class="products-table-wrap">
+        @if (Branches.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">@UiLanguage.Text("No branches loaded for this tenant yet.", "لا توجد فروع محملة لهذا التنت حتى الآن.")</div>
+        }
+        else
+        {
+            <table class="products-table">
+                <thead>
+                            <tr>
+                                <th>@UiLanguage.Text("Branch", "الفرع")</th>
+                                <th>@UiLanguage.Text("Currency", "العملة")</th>
+                                <th>@UiLanguage.Text("Branch Workspaces", "مساحات الفرع")</th>
+                                <th>@UiLanguage.Text("Next POS No.", "رقم POS التالي")</th>
+                                <th>@UiLanguage.Text("Status", "الحالة")</th>
+                                <th>@UiLanguage.Text("Assigned Users", "المستخدمون المعينون")</th>
+                                <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var branch in Branches)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@branch.Name</div>
+                                <div class="table-secondary-cell">@branch.Code</div>
+                            </td>
+                            <td>@branch.CurrencyCode</td>
+                            <td>
+                                <div class="table-primary-cell">@BuildBranchWorkspacesLabel(branch)</div>
+                                <div class="table-secondary-cell">POS / Appointments / Expenses / Print</div>
+                            </td>
+                            <td>@branch.NextInvoiceNumber</td>
+                            <td>@(branch.IsActive ? "Active" : "Inactive")</td>
+                            <td>@branch.AssignedUsers</td>
+                            <td>
+                                <button class="ghost-button" @onclick="() => SelectBranchAsync(branch)">Manage Branch</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @if (SelectedBranch is not null)
+    {
+        <nav class="section-tabs" aria-label="Selected branch admin sections">
+            <button type="button" class="@GetBranchAdminTabClass("workspace")" @onclick="SelectWorkspaceTab">@UiLanguage.Text("Workspace", "مساحة العمل")</button>
+            <button type="button" class="@GetBranchAdminTabClass("users")" @onclick="SelectUsersTab">@UiLanguage.Text("Users", "المستخدمون")</button>
+            <button type="button" class="@GetBranchAdminTabClass("employees")" @onclick="SelectEmployeesTab">@UiLanguage.Text("Employees", "الموظفون")</button>
+            <button type="button" class="@GetBranchAdminTabClass("products")" @onclick="SelectProductsTab">@UiLanguage.Text("Products", "المنتجات")</button>
+            <button type="button" class="@GetBranchAdminTabClass("services")" @onclick="SelectServicesTab">@UiLanguage.Text("Services", "الخدمات")</button>
+        </nav>
+
+        @if (SelectedBranchAdminTab == "workspace")
+        {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@UiLanguage.Text("Branch Settings", "إعدادات الفرع")</span>
+                    <h2>@SelectedBranch.Name</h2>
+                </div>
+                <p>@UiLanguage.Text("Update branch details and control whether the branch is active for future operations.", "حدّث بيانات الفرع وتحكّم فيما إذا كان الفرع فعالاً للعمليات القادمة.")</p>
+            </div>
+
+            <section class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Branch Code", "كود الفرع")</span>
+                    <strong class="metric-value">@SelectedBranch.Code</strong>
+                    <span class="metric-note">@UiLanguage.Text("Current branch identifier inside this tenant.", "المعرّف الحالي للفرع داخل هذا التنت.")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Assigned Users", "المستخدمون المعيّنون")</span>
+                    <strong class="metric-value">@BranchUsers.Count</strong>
+                    <span class="metric-note">@UiLanguage.Text("All active and inactive users assigned under this branch.", "جميع المستخدمين النشطين وغير النشطين المعيّنين تحت هذا الفرع.")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Branch Workspaces", "مساحات عمل الفرع")</span>
+                    <strong class="metric-value">@BuildBranchWorkspacesLabel(SelectedBranch)</strong>
+                    <span class="metric-note">@UiLanguage.Text("Appointments, POS, expenses, and receipt settings stay scoped to this branch.", "المواعيد ونقطة البيع والمصروفات وإعدادات الإيصال تبقى ضمن نطاق هذا الفرع.")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Role Mix", "توزيع الأدوار")</span>
+                    <strong class="metric-value">@($"{CashierCount} / {HrCount} / {BranchManagerCount}")</strong>
+                    <span class="metric-note">@UiLanguage.Text("Cashier / HR / Branch Manager distribution for the selected branch.", "توزيع الكاشير / الموارد البشرية / مدير الفرع للفرع المحدد.")</span>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">@UiLanguage.Text("Branch Status", "حالة الفرع")</span>
+                    <strong class="metric-value">@(SelectedBranch.IsActive ? UiLanguage.Text("Active", "نشط") : UiLanguage.Text("Inactive", "غير نشط"))</strong>
+                    <span class="metric-note">@UiLanguage.Text("Currency", "العملة"): @SelectedBranch.CurrencyCode | @UiLanguage.Text("Next POS No.", "رقم POS التالي"): @SelectedBranch.NextInvoiceNumber</span>
+                </article>
+            </section>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="selectedTenantBranchName">@UiLanguage.Text("Branch Name", "اسم الفرع")</label>
+                    <input id="selectedTenantBranchName" class="form-input" @bind="UpdateBranchModel.Name" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedTenantBranchCode">@UiLanguage.Text("Branch Code", "كود الفرع")</label>
+                    <input id="selectedTenantBranchCode" class="form-input" @bind="UpdateBranchModel.Code" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedTenantBranchCurrency">@UiLanguage.Text("Currency", "العملة")</label>
+                    <input id="selectedTenantBranchCurrency" class="form-input" @bind="UpdateBranchModel.CurrencyCode" />
+                </div>
+
+                <div class="field">
+                    <label for="selectedTenantBranchStatus">@UiLanguage.Text("Status", "الحالة")</label>
+                    <select id="selectedTenantBranchStatus" class="form-input" @bind="SelectedBranchStatusValue">
+                        <option value="true">@UiLanguage.Text("Active", "نشط")</option>
+                        <option value="false">@UiLanguage.Text("Inactive", "غير نشط")</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="UpdateBranchAsync" disabled="@IsBusy">@UiLanguage.Text("Update Branch", "تحديث الفرع")</button>
+                <button class="ghost-button" @onclick="RefreshSelectedBranchAsync" disabled="@IsBusy">@UiLanguage.Text("Refresh Branch", "تحديث بيانات الفرع")</button>
+                <button class="ghost-button" @onclick="ClearSelectedBranch">@UiLanguage.Text("Close Branch Panel", "إغلاق لوحة الفرع")</button>
+            </div>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@UiLanguage.Text("Invoice Print", "طباعة الفاتورة")</span>
+                    <h2>@UiLanguage.Text("Customer receipt settings", "إعدادات إيصال العميل")</h2>
+                </div>
+                <p>@UiLanguage.Text("Control how the printed customer invoice looks for this branch, including title, header, footer, and auto-print behavior.", "تحكّم في شكل فاتورة العميل المطبوعة لهذا الفرع، بما يشمل العنوان والرأس والتذييل وسلوك الطباعة التلقائية.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="branchCompanyName">@UiLanguage.Text("Company Name", "اسم الشركة")</label>
+                    <input id="branchCompanyName" class="form-input" @bind="BranchPrintSettings.CompanyName" />
+                </div>
+
+                <div class="field">
+                    <label for="branchCompanyLogoUrl">@UiLanguage.Text("Logo URL", "رابط اللوجو")</label>
+                    <input id="branchCompanyLogoUrl" class="form-input" @bind="BranchPrintSettings.CompanyLogoUrl" placeholder="https://..." />
+                </div>
+
+                <div class="field">
+                    <label for="branchCompanyPhone">@UiLanguage.Text("Phone", "الهاتف")</label>
+                    <input id="branchCompanyPhone" class="form-input" @bind="BranchPrintSettings.CompanyPhone" />
+                </div>
+
+                <div class="field">
+                    <label for="branchCompanyAddress">@UiLanguage.Text("Address", "العنوان")</label>
+                    <input id="branchCompanyAddress" class="form-input" @bind="BranchPrintSettings.CompanyAddress" />
+                </div>
+
+                <div class="field">
+                    <label for="branchCompanyTaxNumber">@UiLanguage.Text("Tax Number", "الرقم الضريبي")</label>
+                    <input id="branchCompanyTaxNumber" class="form-input" @bind="BranchPrintSettings.CompanyTaxNumber" />
+                </div>
+
+                <div class="field">
+                    <label for="branchReceiptTitle">@UiLanguage.Text("Receipt Title", "عنوان الإيصال")</label>
+                    <input id="branchReceiptTitle" class="form-input" @bind="BranchPrintSettings.ReceiptTitle" />
+                </div>
+
+                <div class="field">
+                    <label for="branchReceiptHeader1">@UiLanguage.Text("Header Line 1", "السطر الأول في الرأس")</label>
+                    <input id="branchReceiptHeader1" class="form-input" @bind="BranchPrintSettings.ReceiptHeaderLine1" />
+                </div>
+
+                <div class="field">
+                    <label for="branchReceiptHeader2">@UiLanguage.Text("Header Line 2", "السطر الثاني في الرأس")</label>
+                    <input id="branchReceiptHeader2" class="form-input" @bind="BranchPrintSettings.ReceiptHeaderLine2" />
+                </div>
+
+                <div class="field">
+                    <label for="branchReceiptFooter">@UiLanguage.Text("Footer Note", "ملاحظة التذييل")</label>
+                    <input id="branchReceiptFooter" class="form-input" @bind="BranchPrintSettings.ReceiptFooterNote" />
+                </div>
+            </div>
+
+            <div class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Show Branch Name", "إظهار اسم الفرع")</span>
+                    <strong class="metric-value">@(BranchPrintSettings.ShowBranchNameOnReceipt ? UiLanguage.Text("Yes", "نعم") : UiLanguage.Text("No", "لا"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="showBranchNameOnReceipt" type="checkbox" @bind="BranchPrintSettings.ShowBranchNameOnReceipt" />
+                        <label for="showBranchNameOnReceipt" style="margin-left:8px;">@UiLanguage.Text("Include branch name on the printed receipt", "تضمين اسم الفرع في الإيصال المطبوع")</label>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Show Customer Name", "إظهار اسم العميل")</span>
+                    <strong class="metric-value">@(BranchPrintSettings.ShowCustomerNameOnReceipt ? UiLanguage.Text("Yes", "نعم") : UiLanguage.Text("No", "لا"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="showCustomerNameOnReceipt" type="checkbox" @bind="BranchPrintSettings.ShowCustomerNameOnReceipt" />
+                        <label for="showCustomerNameOnReceipt" style="margin-left:8px;">@UiLanguage.Text("Include customer name on the printed receipt", "تضمين اسم العميل في الإيصال المطبوع")</label>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Show Payment History", "إظهار سجل الدفعات")</span>
+                    <strong class="metric-value">@(BranchPrintSettings.ShowPaymentHistoryOnReceipt ? UiLanguage.Text("Yes", "نعم") : UiLanguage.Text("No", "لا"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="showPaymentHistoryOnReceipt" type="checkbox" @bind="BranchPrintSettings.ShowPaymentHistoryOnReceipt" />
+                        <label for="showPaymentHistoryOnReceipt" style="margin-left:8px;">@UiLanguage.Text("Include recorded payments in the receipt view", "تضمين الدفعات المسجلة داخل الإيصال")</label>
+                    </div>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">@UiLanguage.Text("Auto Print After Payment", "الطباعة التلقائية بعد الدفع")</span>
+                    <strong class="metric-value">@(BranchPrintSettings.AutoPrintReceiptAfterPayment ? UiLanguage.Text("Enabled", "مفعّل") : UiLanguage.Text("Manual", "يدوي"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="autoPrintReceiptAfterPayment" type="checkbox" @bind="BranchPrintSettings.AutoPrintReceiptAfterPayment" />
+                        <label for="autoPrintReceiptAfterPayment" style="margin-left:8px;">@UiLanguage.Text("Open print dialog automatically after recording a payment", "فتح نافذة الطباعة تلقائياً بعد تسجيل دفعة")</label>
+                    </div>
+                </article>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="SaveBranchPrintSettingsAsync" disabled="@IsBusy">@UiLanguage.Text("Save Print Settings", "حفظ إعدادات الطباعة")</button>
+            </div>
+        </section>
+        }
+
+        @if (SelectedBranchAdminTab == "products")
+        {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@UiLanguage.Text("Branch Products", "منتجات الفرع")</span>
+                    <h2>@UiLanguage.Text("Manage products for", "إدارة المنتجات للفرع") @SelectedBranch.Name</h2>
+                </div>
+                <p>@UiLanguage.Text("Products are created and maintained here at tenant level. Cashier and branch users will only browse and sell them.", "يتم إنشاء المنتجات وإدارتها هنا على مستوى التنت. أما مستخدمو الفرع والكاشير فسيقتصر دورهم على التصفح والبيع فقط.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="tenantBranchProductNameEn">@UiLanguage.Text("English Name", "الاسم بالإنجليزية")</label>
+                    <input id="tenantBranchProductNameEn" class="form-input" @bind="CreateProductModel.NameEn" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductNameAr">@UiLanguage.Text("Arabic Name", "الاسم بالعربية")</label>
+                    <input id="tenantBranchProductNameAr" class="form-input" @bind="CreateProductModel.NameAr" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductSku">SKU</label>
+                    <input id="tenantBranchProductSku" class="form-input" @bind="CreateProductModel.Sku" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductBarcode">@UiLanguage.Text("Barcode", "الباركود")</label>
+                    <input id="tenantBranchProductBarcode" class="form-input" @bind="CreateProductModel.Barcode" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductPrice">@UiLanguage.Text("Sell Price", "سعر البيع")</label>
+                    <input id="tenantBranchProductPrice" class="form-input" type="number" step="0.01" min="0" @bind="CreateProductModel.SellPrice" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductCurrency">@UiLanguage.Text("Currency", "العملة")</label>
+                    <input id="tenantBranchProductCurrency" class="form-input" @bind="CreateProductModel.CurrencyCode" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductUnit">@UiLanguage.Text("Unit", "الوحدة")</label>
+                    <input id="tenantBranchProductUnit" class="form-input" @bind="CreateProductModel.Unit" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchProductStatus">@UiLanguage.Text("Status", "الحالة")</label>
+                    <select id="tenantBranchProductStatus" class="form-input" @bind="CreateProductStatusValue">
+                        <option value="true">@UiLanguage.Text("Active", "نشط")</option>
+                        <option value="false">@UiLanguage.Text("Inactive", "غير نشط")</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="CreateBranchProductAsync" disabled="@IsBusy">@UiLanguage.Text("Create Product", "إنشاء منتج")</button>
+                <button class="ghost-button" @onclick="RefreshBranchCatalogAsync" disabled="@IsBusy">@UiLanguage.Text("Refresh Catalog", "تحديث الكتالوج")</button>
+            </div>
+
+            <div class="products-table-wrap" style="margin-top:20px;">
+                @if (BranchProducts.Count == 0)
+                {
+                    <div class="placeholder-panel">@UiLanguage.Text("No products loaded for this branch yet.", "لا توجد منتجات محملة لهذا الفرع حتى الآن.")</div>
+                }
+                else
+                {
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>@UiLanguage.Text("Product", "المنتج")</th>
+                                <th>SKU</th>
+                                <th>@UiLanguage.Text("Price", "السعر")</th>
+                                <th>@UiLanguage.Text("Status", "الحالة")</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var product in BranchProducts)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="table-primary-cell">@GetProductDisplayName(product)</div>
+                                        <div class="table-secondary-cell">@(string.IsNullOrWhiteSpace(product.Barcode) ? UiLanguage.Text("No barcode", "لا يوجد باركود") : product.Barcode)</div>
+                                    </td>
+                                    <td>@(string.IsNullOrWhiteSpace(product.Sku) ? "-" : product.Sku)</td>
+                                    <td>@FormatProductPrice(product)</td>
+                                    <td>@(product.IsActive ? UiLanguage.Text("Active", "نشط") : UiLanguage.Text("Inactive", "غير نشط"))</td>
+                                    <td><button class="ghost-button" @onclick="() => SelectProduct(product)">@UiLanguage.Text("Manage", "إدارة")</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </section>
+        }
+
+        @if (SelectedBranchAdminTab == "products" && SelectedProduct is not null)
+        {
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">@UiLanguage.Text("Selected Product", "المنتج المحدد")</span>
+                        <h2>@GetProductDisplayName(SelectedProduct)</h2>
+                    </div>
+                    <p>@UiLanguage.Text("Update branch product details, price, and active state from the tenant side.", "حدّث تفاصيل منتج الفرع وسعره وحالته النشطة من جهة التنت.")</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="tenantSelectedProductNameEn">@UiLanguage.Text("English Name", "الاسم بالإنجليزية")</label>
+                        <input id="tenantSelectedProductNameEn" class="form-input" @bind="UpdateProductModel.NameEn" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductNameAr">@UiLanguage.Text("Arabic Name", "الاسم بالعربية")</label>
+                        <input id="tenantSelectedProductNameAr" class="form-input" @bind="UpdateProductModel.NameAr" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductSku">SKU</label>
+                        <input id="tenantSelectedProductSku" class="form-input" @bind="UpdateProductModel.Sku" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductBarcode">@UiLanguage.Text("Barcode", "الباركود")</label>
+                        <input id="tenantSelectedProductBarcode" class="form-input" @bind="UpdateProductModel.Barcode" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductPrice">@UiLanguage.Text("Sell Price", "سعر البيع")</label>
+                        <input id="tenantSelectedProductPrice" class="form-input" type="number" step="0.01" min="0" @bind="UpdateProductModel.SellPrice" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductCurrency">@UiLanguage.Text("Currency", "العملة")</label>
+                        <input id="tenantSelectedProductCurrency" class="form-input" @bind="UpdateProductModel.CurrencyCode" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductUnit">@UiLanguage.Text("Unit", "الوحدة")</label>
+                        <input id="tenantSelectedProductUnit" class="form-input" @bind="UpdateProductModel.Unit" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedProductStatus">@UiLanguage.Text("Status", "الحالة")</label>
+                        <select id="tenantSelectedProductStatus" class="form-input" @bind="SelectedProductStatusValue">
+                            <option value="true">@UiLanguage.Text("Active", "نشط")</option>
+                            <option value="false">@UiLanguage.Text("Inactive", "غير نشط")</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="UpdateBranchProductAsync" disabled="@IsBusy">@UiLanguage.Text("Update Product", "تحديث المنتج")</button>
+                    <button class="ghost-button" @onclick="ClearSelectedProduct">@UiLanguage.Text("Close Product Panel", "إغلاق لوحة المنتج")</button>
+                </div>
+            </section>
+        }
+
+        @if (SelectedBranchAdminTab == "services")
+        {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@UiLanguage.Text("Branch Services", "خدمات الفرع")</span>
+                    <h2>@UiLanguage.Text("Manage services for", "إدارة الخدمات للفرع") @SelectedBranch.Name</h2>
+                </div>
+                <p>@UiLanguage.Text("Services and packages offered by this branch are configured here. Branch users can use them in appointments and sales, but not edit the master catalog.", "يتم إعداد الخدمات والباقات الخاصة بهذا الفرع هنا. يمكن لمستخدمي الفرع استعمالها في المواعيد والمبيعات، لكن لا يمكنهم تعديل الكتالوج الأساسي.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="tenantBranchServiceNameEn">@UiLanguage.Text("English Name", "الاسم بالإنجليزية")</label>
+                    <input id="tenantBranchServiceNameEn" class="form-input" @bind="CreateServiceModel.NameEn" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchServiceNameAr">@UiLanguage.Text("Arabic Name", "الاسم بالعربية")</label>
+                    <input id="tenantBranchServiceNameAr" class="form-input" @bind="CreateServiceModel.NameAr" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchServiceDuration">@UiLanguage.Text("Duration (min)", "المدة (دقيقة)")</label>
+                    <input id="tenantBranchServiceDuration" class="form-input" type="number" min="0" @bind="CreateServiceModel.DurationMin" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchServicePrice">@UiLanguage.Text("Price", "السعر")</label>
+                    <input id="tenantBranchServicePrice" class="form-input" type="number" step="0.01" min="0" @bind="CreateServiceModel.Price" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchServiceCurrency">@UiLanguage.Text("Currency", "العملة")</label>
+                    <input id="tenantBranchServiceCurrency" class="form-input" @bind="CreateServiceModel.CurrencyCode" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantBranchServiceStatus">@UiLanguage.Text("Status", "الحالة")</label>
+                    <select id="tenantBranchServiceStatus" class="form-input" @bind="CreateServiceStatusValue">
+                        <option value="true">@UiLanguage.Text("Active", "نشط")</option>
+                        <option value="false">@UiLanguage.Text("Inactive", "غير نشط")</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="CreateBranchServiceAsync" disabled="@IsBusy">@UiLanguage.Text("Create Service", "إنشاء خدمة")</button>
+            </div>
+
+            <div class="showcase-panel" style="margin-top:20px; padding:20px;">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">@UiLanguage.Text("Excel Import", "استيراد إكسل")</span>
+                        <h2>@UiLanguage.Text("Import branch services from Excel", "استيراد خدمات الفرع من إكسل")</h2>
+                    </div>
+                    <p>@UiLanguage.Text("Upload an `.xlsx` or `.csv` file for this branch only. Required columns: `Arabic`, `English`, `Price`. Optional columns: `Duration`, `Currency`.", "ارفع ملف `.xlsx` أو `.csv` لهذا الفرع فقط. الأعمدة المطلوبة: `Arabic` و`English` و`Price`. الأعمدة الاختيارية: `Duration` و`Currency`.")</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="tenantBranchServiceImport">@UiLanguage.Text("Excel File", "ملف الإكسل")</label>
+                    <InputFile id="tenantBranchServiceImport" OnChange="OnServiceImportFileSelected" accept=".xlsx,.csv" />
+                    <div class="table-secondary-cell" style="margin-top:8px;">@ServiceImportFileName</div>
+                    @if (IsImportingServices && ServiceImportFile is not null)
+                    {
+                        <div class="table-secondary-cell" style="margin-top:8px;">@UiLanguage.Text("Uploading and processing the selected file...", "جاري رفع الملف المحدد ومعالجته...")</div>
+                    }
+                </div>
+
+                    <div class="field">
+                        <label>@UiLanguage.Text("Expected Format", "الصيغة المتوقعة")</label>
+                        <div class="placeholder-panel">Arabic | English | Price | Duration | Currency</div>
+                        <div class="invoice-actions" style="margin-top:12px;">
+                            <a class="ghost-button" href="/templates/service-import-template.csv" download="service-import-template.csv">@UiLanguage.Text("Download Template", "تنزيل القالب")</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button type="button" class="submit-button" @onclick="ImportBranchServicesAsync" disabled="@IsImportingServices || ServiceImportFile is null">
+                        @(IsImportingServices && ServiceImportFile is not null
+                            ? UiLanguage.Text("Importing...", "جاري الاستيراد...")
+                            : UiLanguage.Text("Import Excel Services", "استيراد خدمات الإكسل"))
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(ServiceImportStatusSummary))
+                {
+                    <div class="placeholder-panel" style="margin-top:16px;">@ServiceImportStatusSummary</div>
+                }
+            </div>
+
+            <div class="products-table-wrap" style="margin-top:20px;">
+                @if (BranchServices.Count == 0)
+                {
+                    <div class="placeholder-panel">@UiLanguage.Text("No services loaded for this branch yet.", "لا توجد خدمات محملة لهذا الفرع حتى الآن.")</div>
+                }
+                else
+                {
+                    <table class="products-table">
+                        <thead>
+                            <tr>
+                                <th>@UiLanguage.Text("Service", "الخدمة")</th>
+                                <th>@UiLanguage.Text("Duration", "المدة")</th>
+                                <th>@UiLanguage.Text("Price", "السعر")</th>
+                                <th>@UiLanguage.Text("Status", "الحالة")</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var service in BranchServices)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="table-primary-cell">@GetServiceDisplayName(service)</div>
+                                        <div class="table-secondary-cell">@service.Id.ToString()[..8].ToUpperInvariant()</div>
+                                    </td>
+                                    <td>@FormatServiceDuration(service.DurationMin)</td>
+                                    <td>@FormatServicePrice(service)</td>
+                                    <td>@(service.IsActive ? UiLanguage.Text("Active", "نشط") : UiLanguage.Text("Inactive", "غير نشط"))</td>
+                                    <td><button class="ghost-button" @onclick="() => SelectService(service)">@UiLanguage.Text("Manage", "إدارة")</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </section>
+        }
+
+        @if (SelectedBranchAdminTab == "services" && SelectedService is not null)
+        {
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">@UiLanguage.Text("Selected Service", "الخدمة المحددة")</span>
+                        <h2>@GetServiceDisplayName(SelectedService)</h2>
+                    </div>
+                    <p>@UiLanguage.Text("Update branch service details, price, duration, and status from tenant admin.", "حدّث تفاصيل خدمة الفرع وسعرها ومدتها وحالتها من إدارة التنت.")</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="tenantSelectedServiceNameEn">@UiLanguage.Text("English Name", "الاسم بالإنجليزية")</label>
+                        <input id="tenantSelectedServiceNameEn" class="form-input" @bind="UpdateServiceModel.NameEn" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedServiceNameAr">@UiLanguage.Text("Arabic Name", "الاسم بالعربية")</label>
+                        <input id="tenantSelectedServiceNameAr" class="form-input" @bind="UpdateServiceModel.NameAr" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedServiceDuration">@UiLanguage.Text("Duration (min)", "المدة (دقيقة)")</label>
+                        <input id="tenantSelectedServiceDuration" class="form-input" type="number" min="0" @bind="UpdateServiceModel.DurationMin" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedServicePrice">@UiLanguage.Text("Price", "السعر")</label>
+                        <input id="tenantSelectedServicePrice" class="form-input" type="number" step="0.01" min="0" @bind="UpdateServiceModel.Price" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedServiceCurrency">@UiLanguage.Text("Currency", "العملة")</label>
+                        <input id="tenantSelectedServiceCurrency" class="form-input" @bind="UpdateServiceModel.CurrencyCode" />
+                    </div>
+
+                    <div class="field">
+                        <label for="tenantSelectedServiceStatus">@UiLanguage.Text("Status", "الحالة")</label>
+                        <select id="tenantSelectedServiceStatus" class="form-input" @bind="SelectedServiceStatusValue">
+                            <option value="true">@UiLanguage.Text("Active", "نشط")</option>
+                            <option value="false">@UiLanguage.Text("Inactive", "غير نشط")</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="UpdateBranchServiceAsync" disabled="@IsBusy">@UiLanguage.Text("Update Service", "تحديث الخدمة")</button>
+                    <button class="ghost-button" @onclick="ClearSelectedService">@UiLanguage.Text("Close Service Panel", "إغلاق لوحة الخدمة")</button>
+                </div>
+            </section>
+        }
+
+        @if (SelectedBranchAdminTab == "users")
+        {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@UiLanguage.Text("Branch Users", "مستخدمو الفرع")</span>
+                    <h2>@UiLanguage.Text("Add branch user", "إضافة مستخدم للفرع")</h2>
+                </div>
+                <p>@UiLanguage.Text("Create Cashier, HR, and Branch Manager accounts under this branch.", "أنشئ حسابات كاشير وموارد بشرية ومدير فرع تحت هذا الفرع.")</p>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="tenantAdminBranchUserName">@UiLanguage.Text("Username", "اسم المستخدم")</label>
+                    <input id="tenantAdminBranchUserName" class="form-input" @bind="CreateBranchUserModel.Username" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantAdminBranchUserRole">@UiLanguage.Text("Role", "الدور")</label>
+                    <select id="tenantAdminBranchUserRole" class="form-input" @bind="CreateBranchUserModel.Role">
+                        <option value="CASHIER">@UiLanguage.Text("Cashier", "كاشير")</option>
+                        <option value="HR">HR</option>
+                        <option value="BRANCH_MANAGER">@UiLanguage.Text("Branch Manager", "مدير فرع")</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="tenantAdminBranchUserPassword">@UiLanguage.Text("Password", "كلمة المرور")</label>
+                    <input id="tenantAdminBranchUserPassword" class="form-input" @bind="CreateBranchUserModel.Password" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantAdminBranchUserPin">PIN</label>
+                    <input id="tenantAdminBranchUserPin" class="form-input" @bind="CreateBranchUserModel.Pin" />
+                </div>
+
+                <div class="field">
+                    <label for="tenantAdminBranchUserPlan">@UiLanguage.Text("User License Plan", "خطة ترخيص المستخدم")</label>
+                    <select id="tenantAdminBranchUserPlan" class="form-input" @bind="CreateBranchUserModel.LicensePlan">
+                        <option value="MONTHLY">@UiLanguage.Text("Monthly", "شهري")</option>
+                        <option value="YEARLY">@UiLanguage.Text("Yearly", "سنوي")</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="CreateBranchUserAsync" disabled="@IsBusy">@UiLanguage.Text("Create Branch User", "إنشاء مستخدم للفرع")</button>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            @if (BranchUsers.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">@UiLanguage.Text("No branch users loaded for this branch yet.", "لا يوجد مستخدمون محملون لهذا الفرع حتى الآن.")</div>
+            }
+            else
+            {
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>@UiLanguage.Text("User", "المستخدم")</th>
+                            <th>@UiLanguage.Text("Role", "الدور")</th>
+                            <th>@UiLanguage.Text("Plan", "الخطة")</th>
+                            <th>@UiLanguage.Text("Status", "الحالة")</th>
+                            <th>@UiLanguage.Text("Expires", "ينتهي")</th>
+                            <th>@UiLanguage.Text("Toggle", "تفعيل/تعطيل")</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in BranchUsers)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="table-primary-cell">@user.Username</div>
+                                    <div class="table-secondary-cell">@user.Id.ToString()[..8].ToUpperInvariant()</div>
+                                </td>
+                                <td>@user.Role</td>
+                                <td>
+                                    <select class="form-input compact-input" value="@user.LicensePlan" @onchange="args => OnBranchUserPlanChanged(user, args.Value?.ToString())">
+                                        <option value="MONTHLY">@UiLanguage.Text("Monthly", "شهري")</option>
+                                        <option value="YEARLY">@UiLanguage.Text("Yearly", "سنوي")</option>
+                                    </select>
+                                </td>
+                                <td>@(user.IsActive ? UiLanguage.Text("Active", "نشط") : UiLanguage.Text("Inactive", "غير نشط"))</td>
+                                <td>@user.LicenseExpiresAt.ToLocalTime().ToString("yyyy-MM-dd")</td>
+                                <td>
+                                    <button class="ghost-button" @onclick="() => ToggleBranchUserActiveAsync(user)">@(user.IsActive ? UiLanguage.Text("Deactivate", "تعطيل") : UiLanguage.Text("Activate", "تفعيل"))</button>
+                                </td>
+                                <td>
+                                    <button class="ghost-button" @onclick="() => SelectBranchUser(user)">@UiLanguage.Text("Manage User", "إدارة المستخدم")</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+        }
+
+        <ActionModal Visible="@ShowBranchUserModal"
+                     Eyebrow="@UiLanguage.Text("Branch User", "مستخدم الفرع")"
+                     Title="@UiLanguage.Text("Manage branch user", "إدارة مستخدم الفرع")"
+                     Description="@UiLanguage.Text("Reset password and control exactly which tabs this user can open inside the branch workspace.", "أعد تعيين كلمة المرور وتحكّم بدقة في التبويبات التي يمكن لهذا المستخدم فتحها داخل مساحة عمل الفرع.")"
+                     OnClose="CloseBranchUserModal">
+            @if (SelectedBranchUser is not null)
+            {
+                <div class="showcase-panel" style="box-shadow:none; border:0; padding:0; margin:0; background:transparent;">
+                    <div class="metrics-grid">
+                        <article class="metric-card">
+                            <span class="metric-label">@UiLanguage.Text("Username", "اسم المستخدم")</span>
+                            <strong class="metric-value">@SelectedBranchUser.Username</strong>
+                            <span class="metric-note">@SelectedBranchUser.Role</span>
+                        </article>
+
+                        <article class="metric-card">
+                            <span class="metric-label">@UiLanguage.Text("Status", "الحالة")</span>
+                            <strong class="metric-value">@(SelectedBranchUser.IsActive ? UiLanguage.Text("Active", "نشط") : UiLanguage.Text("Inactive", "غير نشط"))</strong>
+                            <span class="metric-note">@SelectedBranchUser.LicensePlan</span>
+                        </article>
+
+                        <article class="metric-card accent">
+                            <span class="metric-label">@UiLanguage.Text("Allowed Tabs", "التبويبات المسموح بها")</span>
+                            <strong class="metric-value">@SelectedBranchUserPermissionSelections.Count</strong>
+                            <span class="metric-note">@UiLanguage.Text("Dynamic access controlled per user.", "يتم التحكم بالوصول الديناميكي لكل مستخدم.")</span>
+                        </article>
+                    </div>
+
+                    <div class="invoice-form-grid" style="margin-top:18px;">
+                        <div class="field">
+                            <label for="tenantAdminSelectedBranchUserPassword">@UiLanguage.Text("New Password", "كلمة المرور الجديدة")</label>
+                            <input id="tenantAdminSelectedBranchUserPassword" class="form-input" type="password" @bind="BranchUserPasswordModel.NewPassword" />
+                        </div>
+                    </div>
+
+                    <div class="invoice-actions" style="margin-top:16px;">
+                        <button class="submit-button" @onclick="SetBranchUserPasswordAsync" disabled="@IsBusy">@UiLanguage.Text("Reset Branch User Password", "إعادة تعيين كلمة مرور مستخدم الفرع")</button>
+                    </div>
+
+                    <div class="showcase-panel" style="margin-top:18px;">
+                        <div class="showcase-header">
+                            <div>
+                                <span class="eyebrow">@UiLanguage.Text("Dynamic Permissions", "الصلاحيات الديناميكية")</span>
+                                <h2>@UiLanguage.Text("Visible tabs and work areas", "التبويبات ومساحات العمل الظاهرة")</h2>
+                            </div>
+                            <p>@UiLanguage.Text("Choose exactly what this branch user can access. If a tab is unchecked, it will disappear from both the burger menu and the section tabs.", "حدّد بدقة ما الذي يمكن لمستخدم الفرع الوصول إليه. إذا أزلت علامة تبويب ما، فستختفي من قائمة البرجر ومن تبويبات الأقسام أيضاً.")</p>
+                        </div>
+
+                        <div class="permission-grid" style="margin-top:18px;">
+                            @foreach (var permission in BranchUserPermissionOptions)
+                            {
+                                <label class="permission-card">
+                                    <input type="checkbox"
+                                           checked="@SelectedBranchUserPermissionSelections.Contains(permission.Key)"
+                                           @onchange="args => ToggleBranchUserPermission(permission.Key, args.Value as bool?)" />
+                                    <span class="permission-card-title">@permission.Label</span>
+                                    <span class="permission-card-note">@permission.Description</span>
+                                </label>
+                            }
+                        </div>
+
+                        <div class="invoice-actions" style="margin-top:18px;">
+                            <button class="submit-button" @onclick="SaveBranchUserPermissionsAsync" disabled="@IsBusy">@UiLanguage.Text("Save User Permissions", "حفظ صلاحيات المستخدم")</button>
+                            <button class="ghost-button" @onclick="ApplyDefaultPermissionsForSelectedRole" disabled="@IsBusy">@UiLanguage.Text("Reset To Role Default", "إعادة التعيين حسب الدور الافتراضي")</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </ActionModal>
+
+        @if (SelectedBranchAdminTab == "employees")
+        {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">@UiLanguage.Text("Employees", "الموظفون")</span>
+                    <h2>@UiLanguage.Text("Employee files, attendance, and shifts", "ملفات الموظفين والحضور والشفتات")</h2>
+                </div>
+                <p>@UiLanguage.Text("Employees can exist without system access. Link only the staff who should log into the system, and keep the rest as HR-only records with salary, leave, documents, and attendance.", "يمكن أن يوجد الموظف من دون وصول للنظام. اربط فقط الموظفين الذين يجب أن يسجلوا الدخول، واترك الباقين كسجلات موارد بشرية فقط تشمل الرواتب والإجازات والمستندات والحضور.")</p>
+            </div>
+
+            <section class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Employees", "الموظفون")</span>
+                    <strong class="metric-value">@BranchEmployees.Count</strong>
+                    <span class="metric-note">@UiLanguage.Text("All employee files in this branch.", "جميع ملفات الموظفين في هذا الفرع.")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Present / Late", "حاضر / متأخر")</span>
+                    <strong class="metric-value">@($"{AttendanceSummary.PresentCount} / {AttendanceSummary.LateCount}")</strong>
+                    <span class="metric-note">@UiLanguage.Text("Today attendance status snapshot.", "لقطة لحالة حضور اليوم.")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Absent / Leave", "غياب / إجازة")</span>
+                    <strong class="metric-value">@($"{AttendanceSummary.AbsentCount} / {AttendanceSummary.LeaveCount}")</strong>
+                    <span class="metric-note">@UiLanguage.Text("Absence and leave records for today.", "سجلات الغياب والإجازة الخاصة باليوم.")</span>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">@UiLanguage.Text("Today Deductions", "خصومات اليوم")</span>
+                    <strong class="metric-value">@($"{AttendanceSummary.TotalDeductions:0.##} AED")</strong>
+                    <span class="metric-note">@UiLanguage.Text("Late and absent deductions already calculated today.", "تم احتساب خصومات التأخير والغياب لليوم بالفعل.")</span>
+                </article>
+            </section>
+
+            <div class="invoice-form-grid" style="margin-top:18px;">
+                <div class="field">
+                    <label for="employeeFullName">@UiLanguage.Text("Full Name", "الاسم الكامل")</label>
+                    <input id="employeeFullName" class="form-input" @bind="CreateEmployeeModel.FullName" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeCode">@UiLanguage.Text("Employee Code", "كود الموظف")</label>
+                    <input id="employeeCode" class="form-input" @bind="CreateEmployeeModel.EmployeeCode" />
+                </div>
+
+                <div class="field">
+                    <label for="employeePhone">@UiLanguage.Text("Phone", "الهاتف")</label>
+                    <input id="employeePhone" class="form-input" @bind="CreateEmployeeModel.Phone" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeJobTitle">@UiLanguage.Text("Job Title", "المسمى الوظيفي")</label>
+                    <input id="employeeJobTitle" class="form-input" @bind="CreateEmployeeModel.JobTitle" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeSalary">@UiLanguage.Text("Base Salary", "الراتب الأساسي")</label>
+                    <input id="employeeSalary" class="form-input" type="number" step="0.01" min="0" @bind="CreateEmployeeModel.BaseSalary" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeLinkedUser">@UiLanguage.Text("Linked System User", "مستخدم النظام المرتبط")</label>
+                    <select id="employeeLinkedUser" class="form-input" @bind="CreateEmployeeLinkedUserIdValue">
+                        <option value="">@UiLanguage.Text("No system access", "بدون وصول للنظام")</option>
+                        @foreach (var branchUser in BranchUsers)
+                        {
+                            <option value="@branchUser.Id.ToString()">@branchUser.Username (@branchUser.Role)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="invoice-form-grid" style="margin-top:16px;">
+                <div class="field">
+                    <label for="employeeLateDeduction">@UiLanguage.Text("Deduction Per Late Minute", "خصم كل دقيقة تأخير")</label>
+                    <input id="employeeLateDeduction" class="form-input" type="number" step="0.01" min="0" @bind="CreateEmployeeModel.DeductionPerLateMinute" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeAbsentDeduction">@UiLanguage.Text("Deduction Per Absent Day", "خصم كل يوم غياب")</label>
+                    <input id="employeeAbsentDeduction" class="form-input" type="number" step="0.01" min="0" @bind="CreateEmployeeModel.DeductionPerAbsentDay" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeWeeklyOff">@UiLanguage.Text("Weekly Off Days", "أيام العطلة الأسبوعية")</label>
+                    <input id="employeeWeeklyOff" class="form-input" placeholder="@UiLanguage.Text("Sunday, Monday", "الأحد، الاثنين")" @bind="CreateEmployeeModel.WeeklyOffDays" />
+                </div>
+
+                <div class="field">
+                    <label for="employeeHireDate">@UiLanguage.Text("Hire Date", "تاريخ التوظيف")</label>
+                    <input id="employeeHireDate" class="form-input" type="date" @bind="CreateEmployeeHireDateValue" />
+                </div>
+            </div>
+
+            <div class="metrics-grid" style="margin-top:16px;">
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Bookable", "قابل للحجز")</span>
+                    <strong class="metric-value">@(CreateEmployeeModel.IsBookableForAppointments ? UiLanguage.Text("Yes", "نعم") : UiLanguage.Text("No", "لا"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="employeeBookable" type="checkbox" @bind="CreateEmployeeModel.IsBookableForAppointments" />
+                        <label for="employeeBookable" style="margin-left:8px;">@UiLanguage.Text("Show in appointments board", "إظهاره في لوحة المواعيد")</label>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Track Attendance", "تتبع الحضور")</span>
+                    <strong class="metric-value">@(CreateEmployeeModel.TrackAttendance ? UiLanguage.Text("Tracked", "مفعل") : UiLanguage.Text("Manual", "يدوي"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="employeeTrackAttendance" type="checkbox" @bind="CreateEmployeeModel.TrackAttendance" />
+                        <label for="employeeTrackAttendance" style="margin-left:8px;">@UiLanguage.Text("Enable attendance and deductions", "تفعيل الحضور والخصومات")</label>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">@UiLanguage.Text("Status", "الحالة")</span>
+                    <strong class="metric-value">@(CreateEmployeeModel.IsActive ? UiLanguage.Text("Active", "نشط") : UiLanguage.Text("Inactive", "غير نشط"))</strong>
+                    <div style="margin-top:8px;">
+                        <input id="employeeIsActive" type="checkbox" @bind="CreateEmployeeModel.IsActive" />
+                        <label for="employeeIsActive" style="margin-left:8px;">@UiLanguage.Text("Employee file is active", "ملف الموظف نشط")</label>
+                    </div>
+                </article>
+            </div>
+
+            <div class="field" style="margin-top:16px;">
+                <label for="employeeNotes">@UiLanguage.Text("Notes", "ملاحظات")</label>
+                <textarea id="employeeNotes" class="form-input" rows="3" @bind="CreateEmployeeModel.Notes"></textarea>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="CreateBranchEmployeeAsync" disabled="@IsBusy">@UiLanguage.Text("Create Employee", "إنشاء موظف")</button>
+                <button class="ghost-button" @onclick="RefreshEmployeeWorkspaceAsync" disabled="@IsBusy">@UiLanguage.Text("Refresh Employees", "تحديث الموظفين")</button>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            @if (BranchEmployees.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">@UiLanguage.Text("No employees loaded for this branch yet.", "لا يوجد موظفون محملون لهذا الفرع حتى الآن.")</div>
+            }
+            else
+            {
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>@UiLanguage.Text("Employee", "الموظف")</th>
+                            <th>@UiLanguage.Text("Salary", "الراتب")</th>
+                            <th>@UiLanguage.Text("Access", "الوصول")</th>
+                            <th>@UiLanguage.Text("Today", "اليوم")</th>
+                            <th>@UiLanguage.Text("Deduction", "الخصم")</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var employee in BranchEmployees)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="table-primary-cell">@employee.FullName</div>
+                                    <div class="table-secondary-cell">@(!string.IsNullOrWhiteSpace(employee.JobTitle) ? employee.JobTitle : UiLanguage.Text("Employee", "موظف"))</div>
+                                </td>
+                                <td>@FormatMoney(employee.BaseSalary)</td>
+                                <td>@(employee.HasSystemAccess ? $"{employee.LinkedUsername} ({employee.LinkedUserRole})" : UiLanguage.Text("No system access", "بدون وصول للنظام"))</td>
+                                <td>@MapAttendanceStatus(employee.TodayAttendanceStatus)</td>
+                                <td>@($"{employee.TodayDeductionAmount:0.##} AED")</td>
+                                <td><button class="ghost-button" @onclick="() => SelectEmployeeAsync(employee)">@UiLanguage.Text("Manage Employee", "إدارة الموظف")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        @if (SelectedEmployee is not null)
+        {
+            <section class="showcase-panel">
+                <div class="showcase-header">
+                    <div>
+                        <span class="eyebrow">Selected Employee</span>
+                        <h2>@SelectedEmployee.FullName</h2>
+                    </div>
+                    <p>Update the employee file, manage attendance, create shifts, and keep leave and document records together.</p>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="selectedEmployeeName">Full Name</label>
+                        <input id="selectedEmployeeName" class="form-input" @bind="UpdateEmployeeModel.FullName" />
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedEmployeePhone">Phone</label>
+                        <input id="selectedEmployeePhone" class="form-input" @bind="UpdateEmployeeModel.Phone" />
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedEmployeeJob">Job Title</label>
+                        <input id="selectedEmployeeJob" class="form-input" @bind="UpdateEmployeeModel.JobTitle" />
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedEmployeeLinkedUser">Linked System User</label>
+                        <select id="selectedEmployeeLinkedUser" class="form-input" @bind="SelectedEmployeeLinkedUserIdValue">
+                            <option value="">No system access</option>
+                            @foreach (var branchUser in BranchUsers)
+                            {
+                                <option value="@branchUser.Id.ToString()">@branchUser.Username (@branchUser.Role)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedEmployeeBaseSalary">Base Salary</label>
+                        <input id="selectedEmployeeBaseSalary" class="form-input" type="number" step="0.01" min="0" @bind="UpdateEmployeeModel.BaseSalary" />
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedEmployeeLateDeduction">Deduction Per Late Minute</label>
+                        <input id="selectedEmployeeLateDeduction" class="form-input" type="number" step="0.01" min="0" @bind="UpdateEmployeeModel.DeductionPerLateMinute" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="UpdateBranchEmployeeAsync" disabled="@IsBusy">Save Employee</button>
+                    <button class="ghost-button" @onclick="CheckInSelectedEmployeeAsync" disabled="@IsBusy">Check In</button>
+                    <button class="ghost-button" @onclick="CheckOutSelectedEmployeeAsync" disabled="@IsBusy">Check Out</button>
+                    <button class="ghost-button" @onclick="MarkSelectedEmployeeAttendanceAsync" disabled="@IsBusy">Mark Attendance</button>
+                    <button class="ghost-button" @onclick="ClearSelectedEmployee">Close Employee Panel</button>
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:18px;">
+                    <div class="field">
+                        <label for="selectedAttendanceDate">Attendance Date</label>
+                        <input id="selectedAttendanceDate" class="form-input" type="date" @bind="AttendanceMarkDateValue" />
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedAttendanceStatus">Manual Status</label>
+                        <select id="selectedAttendanceStatus" class="form-input" @bind="AttendanceMarkStatus">
+                            <option value="present">Present</option>
+                            <option value="late">Late</option>
+                            <option value="absent">Absent</option>
+                            <option value="leave">Leave</option>
+                            <option value="off">Weekly Off</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="selectedAttendanceNotes">Notes</label>
+                        <input id="selectedAttendanceNotes" class="form-input" @bind="AttendanceMarkNotes" />
+                    </div>
+                </div>
+
+                <div class="products-table-wrap" style="margin-top:20px;">
+                    @if (SelectedEmployeeAttendance.Count == 0)
+                    {
+                        <div class="placeholder-panel">No attendance records loaded yet.</div>
+                    }
+                    else
+                    {
+                        <table class="products-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Check In</th>
+                                    <th>Check Out</th>
+                                    <th>Late</th>
+                                    <th>Worked</th>
+                                    <th>Deduction</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in SelectedEmployeeAttendance)
+                                {
+                                    <tr>
+                                        <td>@item.AttendanceDate.ToString("yyyy-MM-dd")</td>
+                                        <td>@MapAttendanceStatus(item.Status)</td>
+                                        <td>@FormatDateTime(item.CheckInAt)</td>
+                                        <td>@FormatDateTime(item.CheckOutAt)</td>
+                                        <td>@($"{item.LateMinutes} min")</td>
+                                        <td>@($"{item.WorkedMinutes} min")</td>
+                                        <td>@($"{item.DeductionAmount:0.##} AED")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:20px;">
+                    <div class="field">
+                        <label for="employeeShiftNameCreate">Shift Name</label>
+                        <input id="employeeShiftNameCreate" class="form-input" @bind="CreateEmployeeShiftModel.Name" />
+                    </div>
+
+                    <div class="field">
+                        <label for="employeeShiftStartCreate">Start Time</label>
+                        <input id="employeeShiftStartCreate" class="form-input" @bind="CreateEmployeeShiftStartValue" />
+                    </div>
+
+                    <div class="field">
+                        <label for="employeeShiftEndCreate">End Time</label>
+                        <input id="employeeShiftEndCreate" class="form-input" @bind="CreateEmployeeShiftEndValue" />
+                    </div>
+
+                    <div class="field">
+                        <label for="employeeShiftGraceCreate">Grace Minutes</label>
+                        <input id="employeeShiftGraceCreate" class="form-input" type="number" min="0" @bind="CreateEmployeeShiftModel.GraceMinutes" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="CreateSelectedEmployeeShiftAsync" disabled="@IsBusy">Create Shift</button>
+                </div>
+
+                <div class="products-table-wrap" style="margin-top:20px;">
+                    @if (SelectedEmployeeShifts.Count == 0)
+                    {
+                        <div class="placeholder-panel">No shifts loaded yet.</div>
+                    }
+                    else
+                    {
+                        <table class="products-table">
+                            <thead>
+                                <tr>
+                                    <th>Shift</th>
+                                    <th>Time</th>
+                                    <th>Grace</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var shift in SelectedEmployeeShifts)
+                                {
+                                    <tr>
+                                        <td>@shift.Name</td>
+                                        <td>@($"{shift.StartTime:hh\\:mm} - {shift.EndTime:hh\\:mm}")</td>
+                                        <td>@($"{shift.GraceMinutes} min")</td>
+                                        <td>@(shift.IsActive ? "Active" : "Inactive")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <div class="invoice-form-grid" style="margin-top:20px;">
+                    <div class="field">
+                        <label for="employeeLeaveTypeCreate">Leave Type</label>
+                        <select id="employeeLeaveTypeCreate" class="form-input" @bind="CreateEmployeeLeaveModel.LeaveType">
+                            <option value="annual">Annual</option>
+                            <option value="sick">Sick</option>
+                            <option value="emergency">Emergency</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="employeeLeaveStartCreate">Start Date</label>
+                        <input id="employeeLeaveStartCreate" class="form-input" type="date" @bind="CreateEmployeeLeaveStartValue" />
+                    </div>
+
+                    <div class="field">
+                        <label for="employeeLeaveEndCreate">End Date</label>
+                        <input id="employeeLeaveEndCreate" class="form-input" type="date" @bind="CreateEmployeeLeaveEndValue" />
+                    </div>
+
+                    <div class="field">
+                        <label for="employeeDocumentTitleCreate">Document Title</label>
+                        <input id="employeeDocumentTitleCreate" class="form-input" @bind="CreateEmployeeDocumentModel.Title" />
+                    </div>
+                </div>
+
+                <div class="invoice-actions" style="margin-top:16px;">
+                    <button class="submit-button" @onclick="CreateSelectedEmployeeLeaveAsync" disabled="@IsBusy">Create Leave</button>
+                    <button class="ghost-button" @onclick="CreateSelectedEmployeeDocumentAsync" disabled="@IsBusy">Add Document</button>
+                </div>
+            </section>
+        }
+        }
+    }
+</div>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool IsImportingServices { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private string ServiceImportStatusSummary { get; set; } = string.Empty;
+
+    private PlatformTenantModel? TenantSummary { get; set; }
+    private List<PlatformBranchModel> Branches { get; set; } = [];
+    private PlatformBranchModel? SelectedBranch { get; set; }
+    private string SelectedBranchAdminTab { get; set; } = "workspace";
+    private List<PlatformBranchUserModel> BranchUsers { get; set; } = [];
+    private PlatformBranchUserModel? SelectedBranchUser { get; set; }
+    private bool ShowBranchUserModal { get; set; }
+    private HashSet<string> SelectedBranchUserPermissionSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    private BranchInvoicePrintSettingsModel BranchPrintSettings { get; set; } = new();
+    private List<ProductListItemModel> BranchProducts { get; set; } = [];
+    private ProductListItemModel? SelectedProduct { get; set; }
+    private CreateProductRequestModel CreateProductModel { get; set; } = new();
+    private UpdateProductRequestModel UpdateProductModel { get; set; } = new();
+    private string CreateProductStatusValue { get; set; } = "true";
+    private string SelectedProductStatusValue { get; set; } = "true";
+    private List<ServiceListItemModel> BranchServices { get; set; } = [];
+    private ServiceListItemModel? SelectedService { get; set; }
+    private CreateServiceRequestModel CreateServiceModel { get; set; } = new();
+    private UpdateServiceRequestModel UpdateServiceModel { get; set; } = new();
+    private string CreateServiceStatusValue { get; set; } = "true";
+    private string SelectedServiceStatusValue { get; set; } = "true";
+    private IBrowserFile? ServiceImportFile { get; set; }
+    private string ServiceImportFileName { get; set; } = "No file selected.";
+    private List<EmployeeListItemModel> BranchEmployees { get; set; } = [];
+    private EmployeeListItemModel? SelectedEmployee { get; set; }
+    private BranchAttendanceSummaryModel AttendanceSummary { get; set; } = new() { Date = DateTime.Today };
+    private List<EmployeeAttendanceModel> SelectedEmployeeAttendance { get; set; } = [];
+    private List<EmployeeShiftModel> SelectedEmployeeShifts { get; set; } = [];
+    private List<EmployeeLeaveModel> SelectedEmployeeLeaves { get; set; } = [];
+    private List<EmployeeDocumentModel> SelectedEmployeeDocuments { get; set; } = [];
+    private CreateEmployeeRequestModel CreateEmployeeModel { get; set; } = new();
+    private UpdateEmployeeRequestModel UpdateEmployeeModel { get; set; } = new();
+    private CreateEmployeeShiftRequestModel CreateEmployeeShiftModel { get; set; } = new();
+    private CreateEmployeeLeaveRequestModel CreateEmployeeLeaveModel { get; set; } = new();
+    private CreateEmployeeDocumentRequestModel CreateEmployeeDocumentModel { get; set; } = new();
+    private string CreateEmployeeLinkedUserIdValue { get; set; } = string.Empty;
+    private string SelectedEmployeeLinkedUserIdValue { get; set; } = string.Empty;
+    private DateTime? CreateEmployeeHireDateValue { get; set; }
+    private DateTime? UpdateEmployeeHireDateValue { get; set; }
+    private DateTime AttendanceMarkDateValue { get; set; } = DateTime.Today;
+    private string AttendanceMarkStatus { get; set; } = "present";
+    private string AttendanceMarkNotes { get; set; } = string.Empty;
+    private string CreateEmployeeShiftStartValue { get; set; } = "09:00";
+    private string CreateEmployeeShiftEndValue { get; set; } = "18:00";
+    private DateTime? CreateEmployeeShiftEffectiveFromValue { get; set; } = DateTime.Today;
+    private DateTime? CreateEmployeeLeaveStartValue { get; set; } = DateTime.Today;
+    private DateTime? CreateEmployeeLeaveEndValue { get; set; } = DateTime.Today;
+    private DateTime? CreateEmployeeDocumentExpiryValue { get; set; }
+
+    private int CashierCount => BranchUsers.Count(user => string.Equals(user.Role, "CASHIER", StringComparison.OrdinalIgnoreCase));
+    private int HrCount => BranchUsers.Count(user => string.Equals(user.Role, "HR", StringComparison.OrdinalIgnoreCase));
+    private int BranchManagerCount => BranchUsers.Count(user => string.Equals(user.Role, "BRANCH_MANAGER", StringComparison.OrdinalIgnoreCase));
+
+    private CreateBranchRequestModel CreateBranchModel { get; set; } = new();
+    private UpdateBranchRequestModel UpdateBranchModel { get; set; } = new();
+    private CreateBranchUserRequestModel CreateBranchUserModel { get; set; } = new();
+    private SetUserPasswordRequestModel BranchUserPasswordModel { get; set; } = new();
+    private string SelectedBranchStatusValue { get; set; } = "true";
+    private static readonly IReadOnlyList<(string Key, string Label, string Description)> BranchUserPermissionOptions =
+    [
+        ("pos", "Point of Sale", "Open the live selling screen and build draft sales."),
+        ("products", "Products", "View branch products and pricing."),
+        ("services", "Services", "View branch services and sell service lines."),
+        ("customers", "Customers", "Search, create, and attach customers."),
+        ("appointments", "Appointments", "Open the appointment board and manage bookings."),
+        ("employees", "Employees", "Access employee files, attendance, and shifts."),
+        ("expenses", "Expenses", "Log and review branch operating expenses."),
+        ("cashier", "Cashier Session", "Open and close cashier sessions."),
+        ("invoices", "Invoices", "Review invoices and create invoice records."),
+        ("reports", "Reports", "Reserved for future reporting screens.")
+    ];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked)
+            return;
+
+        _sessionChecked = true;
+        try
+        {
+            await SessionState.InitializeAsync();
+            await UiLanguage.InitializeAsync();
+
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            if (!SessionState.IsTenantAdmin)
+            {
+                NavigationManager.NavigateTo("/products");
+                return;
+            }
+
+            await LoadDashboardAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadDashboardAsync()
+    {
+        ErrorMessage = string.Empty;
+        TenantSummary = await TenantAdminApiClient.GetTenantAsync(SessionState);
+        Branches = (await TenantAdminApiClient.GetBranchesAsync(SessionState)).ToList();
+
+        if (SelectedBranch is not null)
+        {
+            SelectedBranch = Branches.FirstOrDefault(x => x.Id == SelectedBranch.Id);
+            if (SelectedBranch is not null)
+            {
+                UpdateBranchModel = new UpdateBranchRequestModel
+                {
+                    Name = SelectedBranch.Name,
+                    Code = SelectedBranch.Code,
+                    CurrencyCode = SelectedBranch.CurrencyCode,
+                    IsActive = SelectedBranch.IsActive
+                };
+                SelectedBranchStatusValue = SelectedBranch.IsActive ? "true" : "false";
+
+                BranchUsers = (await TenantAdminApiClient.GetBranchUsersAsync(SessionState, SelectedBranch.Id)).ToList();
+                  BranchPrintSettings = await TenantAdminApiClient.GetBranchPrintSettingsAsync(SessionState, SelectedBranch.Id);
+                  BranchProducts = (await TenantAdminApiClient.GetBranchProductsAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+                  BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+                  BranchEmployees = (await TenantAdminApiClient.GetBranchEmployeesAsync(SessionState, SelectedBranch.Id)).ToList();
+                  AttendanceSummary = await TenantAdminApiClient.GetBranchAttendanceSummaryAsync(SessionState, SelectedBranch.Id, DateTime.Today);
+                  SelectedBranchUser = SelectedBranchUser is null
+                      ? null
+                      : BranchUsers.FirstOrDefault(x => x.Id == SelectedBranchUser.Id);
+                  SelectedProduct = SelectedProduct is null ? null : BranchProducts.FirstOrDefault(x => x.Id == SelectedProduct.Id);
+                  SelectedService = SelectedService is null ? null : BranchServices.FirstOrDefault(x => x.Id == SelectedService.Id);
+                  if (SelectedEmployee is not null)
+                  {
+                      SelectedEmployee = BranchEmployees.FirstOrDefault(x => x.Id == SelectedEmployee.Id);
+                      if (SelectedEmployee is not null)
+                          await LoadSelectedEmployeeWorkspaceAsync();
+                  }
+              }
+              else
+              {
+                  BranchUsers = [];
+                  SelectedBranchUser = null;
+                  BranchPrintSettings = new BranchInvoicePrintSettingsModel();
+                  BranchProducts = [];
+                  SelectedProduct = null;
+                  BranchServices = [];
+                  SelectedService = null;
+                  BranchEmployees = [];
+                  AttendanceSummary = new BranchAttendanceSummaryModel { Date = DateTime.Today };
+                  ClearSelectedEmployee();
+              }
+          }
+      }
+
+    private async Task LoadSelectedEmployeeWorkspaceAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        SelectedEmployeeAttendance = (await TenantAdminApiClient.GetEmployeeAttendanceAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id)).ToList();
+        SelectedEmployeeShifts = (await TenantAdminApiClient.GetEmployeeShiftsAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id)).ToList();
+        SelectedEmployeeLeaves = (await TenantAdminApiClient.GetEmployeeLeavesAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id)).ToList();
+        SelectedEmployeeDocuments = (await TenantAdminApiClient.GetEmployeeDocumentsAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id)).ToList();
+    }
+
+    private async Task RefreshDashboardAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await LoadDashboardAsync();
+            FlashMessage = "Dashboard refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OnServiceImportFileSelected(InputFileChangeEventArgs args)
+    {
+        ServiceImportFile = args.File;
+        ServiceImportFileName = ServiceImportFile?.Name ?? "No file selected.";
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ServiceImportStatusSummary = string.Empty;
+    }
+
+    private async Task SelectBranchAsync(PlatformBranchModel branch)
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            SelectedBranch = branch;
+            SelectedBranchAdminTab = "workspace";
+            SelectedBranchUser = null;
+            ShowBranchUserModal = false;
+            SelectedBranchUserPermissionSelections.Clear();
+            BranchUserPasswordModel = new SetUserPasswordRequestModel();
+            UpdateBranchModel = new UpdateBranchRequestModel
+            {
+                Name = branch.Name,
+                Code = branch.Code,
+                CurrencyCode = branch.CurrencyCode,
+                IsActive = branch.IsActive
+            };
+            SelectedBranchStatusValue = branch.IsActive ? "true" : "false";
+            BranchUsers = (await TenantAdminApiClient.GetBranchUsersAsync(SessionState, branch.Id)).ToList();
+            BranchPrintSettings = await TenantAdminApiClient.GetBranchPrintSettingsAsync(SessionState, branch.Id);
+            BranchProducts = (await TenantAdminApiClient.GetBranchProductsAsync(SessionState, branch.Id, null, 1, 100)).Items.ToList();
+            BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, branch.Id, null, 1, 100)).Items.ToList();
+            BranchEmployees = (await TenantAdminApiClient.GetBranchEmployeesAsync(SessionState, branch.Id)).ToList();
+            AttendanceSummary = await TenantAdminApiClient.GetBranchAttendanceSummaryAsync(SessionState, branch.Id, DateTime.Today);
+            ClearSelectedProduct();
+            ClearSelectedService();
+            ClearSelectedEmployee();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            SelectedBranch = null;
+            BranchUsers = [];
+            SelectedBranchUser = null;
+            UpdateBranchModel = new UpdateBranchRequestModel();
+            BranchPrintSettings = new BranchInvoicePrintSettingsModel();
+            BranchProducts = [];
+            BranchServices = [];
+            BranchEmployees = [];
+            AttendanceSummary = new BranchAttendanceSummaryModel { Date = DateTime.Today };
+        }
+    }
+
+    private void ClearSelectedBranch()
+    {
+        SelectedBranch = null;
+        SelectedBranchAdminTab = "workspace";
+        SelectedBranchUser = null;
+        ShowBranchUserModal = false;
+        SelectedBranchUserPermissionSelections.Clear();
+        BranchUsers = [];
+        UpdateBranchModel = new UpdateBranchRequestModel();
+        SelectedBranchStatusValue = "true";
+        BranchUserPasswordModel = new SetUserPasswordRequestModel();
+        CreateBranchUserModel = new CreateBranchUserRequestModel();
+        BranchPrintSettings = new BranchInvoicePrintSettingsModel();
+        BranchProducts = [];
+        SelectedProduct = null;
+        CreateProductModel = new CreateProductRequestModel();
+        UpdateProductModel = new UpdateProductRequestModel();
+        CreateProductStatusValue = "true";
+        SelectedProductStatusValue = "true";
+        BranchServices = [];
+        SelectedService = null;
+        CreateServiceModel = new CreateServiceRequestModel();
+        UpdateServiceModel = new UpdateServiceRequestModel();
+        CreateServiceStatusValue = "true";
+        SelectedServiceStatusValue = "true";
+        BranchEmployees = [];
+        AttendanceSummary = new BranchAttendanceSummaryModel { Date = DateTime.Today };
+        ClearSelectedEmployee();
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+    }
+
+    private async Task RefreshSelectedBranchAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            var selectedBranchId = SelectedBranch.Id;
+            await LoadDashboardAsync();
+            SelectedBranch = Branches.FirstOrDefault(x => x.Id == selectedBranchId);
+
+            if (SelectedBranch is not null)
+            {
+                UpdateBranchModel = new UpdateBranchRequestModel
+                {
+                    Name = SelectedBranch.Name,
+                    Code = SelectedBranch.Code,
+                    CurrencyCode = SelectedBranch.CurrencyCode,
+                    IsActive = SelectedBranch.IsActive
+                };
+                SelectedBranchStatusValue = SelectedBranch.IsActive ? "true" : "false";
+
+                BranchUsers = (await TenantAdminApiClient.GetBranchUsersAsync(SessionState, SelectedBranch.Id)).ToList();
+                BranchPrintSettings = await TenantAdminApiClient.GetBranchPrintSettingsAsync(SessionState, SelectedBranch.Id);
+                BranchProducts = (await TenantAdminApiClient.GetBranchProductsAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+                BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+                BranchEmployees = (await TenantAdminApiClient.GetBranchEmployeesAsync(SessionState, SelectedBranch.Id)).ToList();
+                AttendanceSummary = await TenantAdminApiClient.GetBranchAttendanceSummaryAsync(SessionState, SelectedBranch.Id, DateTime.Today);
+                FlashMessage = "Selected branch refreshed successfully.";
+            }
+            else
+            {
+                ClearSelectedBranch();
+                FlashMessage = "The selected branch was refreshed and is no longer open in the panel.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SelectBranchUser(PlatformBranchUserModel user)
+    {
+        SelectedBranchUser = user;
+        SelectedBranchUserPermissionSelections = new HashSet<string>(user.Permissions ?? [], StringComparer.OrdinalIgnoreCase);
+        BranchUserPasswordModel = new SetUserPasswordRequestModel();
+        ShowBranchUserModal = true;
+    }
+
+    private void SelectBranchAdminTab(string tab)
+    {
+        SelectedBranchAdminTab = tab;
+    }
+
+    private void SelectWorkspaceTab() => SelectBranchAdminTab("workspace");
+    private void SelectUsersTab() => SelectBranchAdminTab("users");
+    private void SelectEmployeesTab() => SelectBranchAdminTab("employees");
+    private void SelectProductsTab() => SelectBranchAdminTab("products");
+    private void SelectServicesTab() => SelectBranchAdminTab("services");
+
+    private string GetBranchAdminTabClass(string tab)
+        => SelectedBranchAdminTab == tab ? "section-tab active small-tab" : "section-tab small-tab";
+
+    private async Task CreateBranchAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.CreateBranchAsync(SessionState, CreateBranchModel);
+            CreateBranchModel = new CreateBranchRequestModel();
+            FlashMessage = "Branch created successfully.";
+            await LoadDashboardAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task UpdateBranchAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            UpdateBranchModel.IsActive = string.Equals(SelectedBranchStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            var updatedBranch = await TenantAdminApiClient.UpdateBranchAsync(SessionState, SelectedBranch.Id, UpdateBranchModel);
+            SelectedBranch = updatedBranch;
+            FlashMessage = "Branch updated successfully.";
+            await RefreshSelectedBranchAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateBranchUserAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.CreateBranchUserAsync(SessionState, SelectedBranch.Id, CreateBranchUserModel);
+            CreateBranchUserModel = new CreateBranchUserRequestModel();
+            FlashMessage = "Branch user created successfully.";
+            await LoadDashboardAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ToggleBranchUserActiveAsync(PlatformBranchUserModel user)
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.UpdateBranchUserLicenseAsync(SessionState, SelectedBranch.Id, user.Id, new UpdateTenantUserLicenseRequestModel
+            {
+                LicensePlan = user.LicensePlan,
+                IsActive = !user.IsActive
+            });
+            FlashMessage = "Branch user license updated successfully.";
+            await LoadDashboardAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task OnBranchUserPlanChanged(PlatformBranchUserModel user, string? newPlan)
+    {
+        if (SelectedBranch is null || string.IsNullOrWhiteSpace(newPlan))
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.UpdateBranchUserLicenseAsync(SessionState, SelectedBranch.Id, user.Id, new UpdateTenantUserLicenseRequestModel
+            {
+                LicensePlan = newPlan,
+                IsActive = user.IsActive
+            });
+            FlashMessage = "Branch user plan updated successfully.";
+            await LoadDashboardAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SetBranchUserPasswordAsync()
+    {
+        if (SelectedBranch is null || SelectedBranchUser is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.SetBranchUserPasswordAsync(SessionState, SelectedBranch.Id, SelectedBranchUser.Id, BranchUserPasswordModel);
+            BranchUserPasswordModel = new SetUserPasswordRequestModel();
+            FlashMessage = "Branch user password reset successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SaveBranchUserPermissionsAsync()
+    {
+        if (SelectedBranch is null || SelectedBranchUser is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            var updated = await TenantAdminApiClient.UpdateBranchUserPermissionsAsync(
+                SessionState,
+                SelectedBranch.Id,
+                SelectedBranchUser.Id,
+                new UpdateBranchUserPermissionsRequestModel
+                {
+                    Permissions = SelectedBranchUserPermissionSelections.OrderBy(x => x).ToList()
+                });
+
+            var index = BranchUsers.FindIndex(x => x.Id == updated.Id);
+            if (index >= 0)
+                BranchUsers[index] = updated;
+
+            SelectedBranchUser = updated;
+            FlashMessage = "Branch user permissions updated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void ToggleBranchUserPermission(string key, bool? isEnabled)
+    {
+        if (isEnabled == true)
+            SelectedBranchUserPermissionSelections.Add(key);
+        else
+            SelectedBranchUserPermissionSelections.Remove(key);
+    }
+
+    private void ApplyDefaultPermissionsForSelectedRole()
+    {
+        if (SelectedBranchUser is null)
+            return;
+
+        SelectedBranchUserPermissionSelections = SelectedBranchUser.Role.ToUpperInvariant() switch
+        {
+            "BRANCH_MANAGER" => new HashSet<string>(["pos", "products", "services", "customers", "appointments", "employees", "expenses", "cashier", "invoices", "reports"], StringComparer.OrdinalIgnoreCase),
+            "HR" => new HashSet<string>(["customers", "appointments", "employees", "expenses"], StringComparer.OrdinalIgnoreCase),
+            "CASHIER" => new HashSet<string>(["pos", "products", "services", "customers", "appointments", "cashier", "invoices"], StringComparer.OrdinalIgnoreCase),
+            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    private Task CloseBranchUserModal()
+    {
+        ShowBranchUserModal = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveBranchPrintSettingsAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            BranchPrintSettings = await TenantAdminApiClient.UpdateBranchPrintSettingsAsync(SessionState, SelectedBranch.Id, new UpdateBranchInvoicePrintSettingsRequestModel
+            {
+                CompanyName = BranchPrintSettings.CompanyName,
+                CompanyLogoUrl = BranchPrintSettings.CompanyLogoUrl,
+                CompanyPhone = BranchPrintSettings.CompanyPhone,
+                CompanyAddress = BranchPrintSettings.CompanyAddress,
+                CompanyTaxNumber = BranchPrintSettings.CompanyTaxNumber,
+                ReceiptTitle = BranchPrintSettings.ReceiptTitle,
+                ReceiptHeaderLine1 = BranchPrintSettings.ReceiptHeaderLine1,
+                ReceiptHeaderLine2 = BranchPrintSettings.ReceiptHeaderLine2,
+                ReceiptFooterNote = BranchPrintSettings.ReceiptFooterNote,
+                ShowBranchNameOnReceipt = BranchPrintSettings.ShowBranchNameOnReceipt,
+                ShowCustomerNameOnReceipt = BranchPrintSettings.ShowCustomerNameOnReceipt,
+                ShowPaymentHistoryOnReceipt = BranchPrintSettings.ShowPaymentHistoryOnReceipt,
+                AutoPrintReceiptAfterPayment = BranchPrintSettings.AutoPrintReceiptAfterPayment
+            });
+            FlashMessage = "Branch print settings updated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RefreshBranchCatalogAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            BranchProducts = (await TenantAdminApiClient.GetBranchProductsAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+            BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+            FlashMessage = "Branch catalog refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateBranchProductAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateProductModel.IsActive = string.Equals(CreateProductStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await TenantAdminApiClient.CreateBranchProductAsync(SessionState, SelectedBranch.Id, CreateProductModel);
+            CreateProductModel = new CreateProductRequestModel();
+            CreateProductStatusValue = "true";
+            BranchProducts = (await TenantAdminApiClient.GetBranchProductsAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+            FlashMessage = "Branch product created successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void SelectProduct(ProductListItemModel product)
+    {
+        SelectedProduct = product;
+        UpdateProductModel = new UpdateProductRequestModel
+        {
+            Sku = product.Sku ?? string.Empty,
+            Barcode = product.Barcode ?? string.Empty,
+            NameAr = product.NameAr ?? string.Empty,
+            NameEn = product.NameEn ?? string.Empty,
+            Unit = string.IsNullOrWhiteSpace(product.Unit) ? "pcs" : product.Unit,
+            SellPrice = product.SellPrice ?? 0,
+            CurrencyCode = string.IsNullOrWhiteSpace(product.CurrencyCode) ? "AED" : product.CurrencyCode,
+            IsActive = product.IsActive,
+            TrackInventory = product.TrackInventory
+        };
+        SelectedProductStatusValue = product.IsActive ? "true" : "false";
+    }
+
+    private void ClearSelectedProduct()
+    {
+        SelectedProduct = null;
+        UpdateProductModel = new UpdateProductRequestModel();
+        SelectedProductStatusValue = "true";
+    }
+
+    private async Task UpdateBranchProductAsync()
+    {
+        if (SelectedBranch is null || SelectedProduct is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            UpdateProductModel.IsActive = string.Equals(SelectedProductStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await TenantAdminApiClient.UpdateBranchProductAsync(SessionState, SelectedBranch.Id, SelectedProduct.Id, UpdateProductModel);
+            BranchProducts = (await TenantAdminApiClient.GetBranchProductsAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+            SelectedProduct = BranchProducts.FirstOrDefault(x => x.Id == SelectedProduct.Id);
+            FlashMessage = "Branch product updated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateBranchServiceAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateServiceModel.IsActive = string.Equals(CreateServiceStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await TenantAdminApiClient.CreateBranchServiceAsync(SessionState, SelectedBranch.Id, CreateServiceModel);
+            CreateServiceModel = new CreateServiceRequestModel();
+            CreateServiceStatusValue = "true";
+            BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+            FlashMessage = "Branch service created successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task ImportBranchServicesAsync()
+    {
+        if (SelectedBranch is null || ServiceImportFile is null)
+            return;
+
+        IsImportingServices = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ServiceImportStatusSummary = string.Empty;
+
+        try
+        {
+            await using var stream = ServiceImportFile.OpenReadStream(10 * 1024 * 1024);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+
+            var result = await TenantAdminApiClient.ImportBranchServicesAsync(
+                SessionState,
+                SelectedBranch.Id,
+                memoryStream.ToArray(),
+                ServiceImportFile.Name);
+
+              BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, SelectedBranch.Id, null, 1, 200)).Items.ToList();
+              SelectedService = null;
+              UpdateServiceModel = new UpdateServiceRequestModel();
+              ServiceImportFile = null;
+              ServiceImportFileName = "No file selected.";
+
+              FlashMessage = $"Excel import finished. Created: {result.CreatedCount}, updated: {result.UpdatedCount}, skipped: {result.SkippedCount}.";
+              ServiceImportStatusSummary = $"Imported rows: {result.TotalRows}. Created: {result.CreatedCount}. Updated: {result.UpdatedCount}. Skipped: {result.SkippedCount}.";
+              ErrorMessage = result.Issues.Count == 0
+                  ? string.Empty
+                  : string.Join(" | ", result.Issues.Take(5).Select(x => $"Row {x.RowNumber}: {x.Message}"));
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            ServiceImportStatusSummary = "The import did not finish. Check the popup message, then try the template file again.";
+        }
+        finally
+        {
+            IsImportingServices = false;
+        }
+    }
+
+    private void SelectService(ServiceListItemModel service)
+    {
+        SelectedService = service;
+        UpdateServiceModel = new UpdateServiceRequestModel
+        {
+            NameAr = service.NameAr ?? string.Empty,
+            NameEn = service.NameEn ?? string.Empty,
+            DurationMin = service.DurationMin,
+            Price = service.Price,
+            CurrencyCode = string.IsNullOrWhiteSpace(service.CurrencyCode) ? "AED" : service.CurrencyCode,
+            IsActive = service.IsActive
+        };
+        SelectedServiceStatusValue = service.IsActive ? "true" : "false";
+    }
+
+    private void ClearSelectedService()
+    {
+        SelectedService = null;
+        UpdateServiceModel = new UpdateServiceRequestModel();
+        SelectedServiceStatusValue = "true";
+    }
+
+    private async Task UpdateBranchServiceAsync()
+    {
+        if (SelectedBranch is null || SelectedService is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            UpdateServiceModel.IsActive = string.Equals(SelectedServiceStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await TenantAdminApiClient.UpdateBranchServiceAsync(SessionState, SelectedBranch.Id, SelectedService.Id, UpdateServiceModel);
+            BranchServices = (await TenantAdminApiClient.GetBranchServicesAsync(SessionState, SelectedBranch.Id, null, 1, 100)).Items.ToList();
+            SelectedService = BranchServices.FirstOrDefault(x => x.Id == SelectedService.Id);
+            FlashMessage = "Branch service updated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RefreshEmployeeWorkspaceAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            BranchEmployees = (await TenantAdminApiClient.GetBranchEmployeesAsync(SessionState, SelectedBranch.Id)).ToList();
+            AttendanceSummary = await TenantAdminApiClient.GetBranchAttendanceSummaryAsync(SessionState, SelectedBranch.Id, DateTime.Today);
+            if (SelectedEmployee is not null)
+            {
+                SelectedEmployee = BranchEmployees.FirstOrDefault(x => x.Id == SelectedEmployee.Id);
+                if (SelectedEmployee is not null)
+                    await LoadSelectedEmployeeWorkspaceAsync();
+            }
+
+            FlashMessage = "Employee workspace refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateBranchEmployeeAsync()
+    {
+        if (SelectedBranch is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateEmployeeModel.LinkedUserId = ParseNullableGuid(CreateEmployeeLinkedUserIdValue);
+            CreateEmployeeModel.HireDate = CreateEmployeeHireDateValue;
+            await TenantAdminApiClient.CreateBranchEmployeeAsync(SessionState, SelectedBranch.Id, CreateEmployeeModel);
+            CreateEmployeeModel = new CreateEmployeeRequestModel();
+            CreateEmployeeLinkedUserIdValue = string.Empty;
+            CreateEmployeeHireDateValue = null;
+            await RefreshEmployeeWorkspaceAsync();
+            FlashMessage = "Employee file created successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SelectEmployeeAsync(EmployeeListItemModel employee)
+    {
+        SelectedEmployee = employee;
+        UpdateEmployeeModel = new UpdateEmployeeRequestModel
+        {
+            FullName = employee.FullName,
+            Phone = employee.Phone,
+            Email = employee.Email,
+            EmployeeCode = employee.EmployeeCode,
+            JobTitle = employee.JobTitle,
+            EmploymentType = employee.EmploymentType,
+            SalaryType = employee.SalaryType,
+            BaseSalary = employee.BaseSalary,
+            DeductionPerLateMinute = employee.DeductionPerLateMinute,
+            DeductionPerAbsentDay = employee.DeductionPerAbsentDay,
+            WeeklyOffDays = employee.WeeklyOffDays,
+            HireDate = employee.HireDate,
+            PhotoUrl = employee.PhotoUrl,
+            Notes = employee.Notes,
+            IsBookableForAppointments = employee.IsBookableForAppointments,
+            TrackAttendance = employee.TrackAttendance,
+            LinkedUserId = employee.LinkedUserId,
+            IsActive = employee.IsActive
+        };
+        SelectedEmployeeLinkedUserIdValue = employee.LinkedUserId?.ToString() ?? string.Empty;
+        UpdateEmployeeHireDateValue = employee.HireDate;
+        AttendanceMarkDateValue = DateTime.Today;
+        AttendanceMarkStatus = "present";
+        AttendanceMarkNotes = string.Empty;
+        await LoadSelectedEmployeeWorkspaceAsync();
+    }
+
+    private void ClearSelectedEmployee()
+    {
+        SelectedEmployee = null;
+        UpdateEmployeeModel = new UpdateEmployeeRequestModel();
+        SelectedEmployeeLinkedUserIdValue = string.Empty;
+        UpdateEmployeeHireDateValue = null;
+        SelectedEmployeeAttendance = [];
+        SelectedEmployeeShifts = [];
+        SelectedEmployeeLeaves = [];
+        SelectedEmployeeDocuments = [];
+        CreateEmployeeShiftModel = new CreateEmployeeShiftRequestModel();
+        CreateEmployeeLeaveModel = new CreateEmployeeLeaveRequestModel();
+        CreateEmployeeDocumentModel = new CreateEmployeeDocumentRequestModel();
+        CreateEmployeeShiftStartValue = "09:00";
+        CreateEmployeeShiftEndValue = "18:00";
+        CreateEmployeeShiftEffectiveFromValue = DateTime.Today;
+        CreateEmployeeLeaveStartValue = DateTime.Today;
+        CreateEmployeeLeaveEndValue = DateTime.Today;
+        CreateEmployeeDocumentExpiryValue = null;
+    }
+
+    private async Task UpdateBranchEmployeeAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            UpdateEmployeeModel.LinkedUserId = ParseNullableGuid(SelectedEmployeeLinkedUserIdValue);
+            UpdateEmployeeModel.HireDate = UpdateEmployeeHireDateValue;
+            await TenantAdminApiClient.UpdateBranchEmployeeAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, UpdateEmployeeModel);
+            await RefreshEmployeeWorkspaceAsync();
+            FlashMessage = "Employee file updated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CheckInSelectedEmployeeAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.CheckInEmployeeAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, new EmployeeAttendanceCheckInRequestModel
+            {
+                AttendanceDate = AttendanceMarkDateValue,
+                Notes = AttendanceMarkNotes
+            });
+            await RefreshEmployeeWorkspaceAsync();
+            await LoadSelectedEmployeeWorkspaceAsync();
+            FlashMessage = "Employee checked in successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CheckOutSelectedEmployeeAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.CheckOutEmployeeAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, new EmployeeAttendanceCheckOutRequestModel
+            {
+                AttendanceDate = AttendanceMarkDateValue,
+                Notes = AttendanceMarkNotes
+            });
+            await RefreshEmployeeWorkspaceAsync();
+            await LoadSelectedEmployeeWorkspaceAsync();
+            FlashMessage = "Employee checked out successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task MarkSelectedEmployeeAttendanceAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await TenantAdminApiClient.MarkEmployeeAttendanceAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, new MarkEmployeeAttendanceRequestModel
+            {
+                AttendanceDate = AttendanceMarkDateValue,
+                Status = AttendanceMarkStatus,
+                Notes = AttendanceMarkNotes
+            });
+            await RefreshEmployeeWorkspaceAsync();
+            await LoadSelectedEmployeeWorkspaceAsync();
+            FlashMessage = "Attendance marked successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateSelectedEmployeeShiftAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateEmployeeShiftModel.StartTime = ParseTime(CreateEmployeeShiftStartValue);
+            CreateEmployeeShiftModel.EndTime = ParseTime(CreateEmployeeShiftEndValue);
+            CreateEmployeeShiftModel.EffectiveFrom = CreateEmployeeShiftEffectiveFromValue;
+            await TenantAdminApiClient.CreateEmployeeShiftAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, CreateEmployeeShiftModel);
+            CreateEmployeeShiftModel = new CreateEmployeeShiftRequestModel();
+            CreateEmployeeShiftStartValue = "09:00";
+            CreateEmployeeShiftEndValue = "18:00";
+            CreateEmployeeShiftEffectiveFromValue = DateTime.Today;
+            await LoadSelectedEmployeeWorkspaceAsync();
+            FlashMessage = "Employee shift created successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateSelectedEmployeeLeaveAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateEmployeeLeaveModel.StartDate = CreateEmployeeLeaveStartValue ?? DateTime.Today;
+            CreateEmployeeLeaveModel.EndDate = CreateEmployeeLeaveEndValue ?? CreateEmployeeLeaveModel.StartDate;
+            await TenantAdminApiClient.CreateEmployeeLeaveAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, CreateEmployeeLeaveModel);
+            CreateEmployeeLeaveModel = new CreateEmployeeLeaveRequestModel();
+            CreateEmployeeLeaveStartValue = DateTime.Today;
+            CreateEmployeeLeaveEndValue = DateTime.Today;
+            await LoadSelectedEmployeeWorkspaceAsync();
+            FlashMessage = "Employee leave record created successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CreateSelectedEmployeeDocumentAsync()
+    {
+        if (SelectedBranch is null || SelectedEmployee is null)
+            return;
+
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateEmployeeDocumentModel.ExpiresAt = CreateEmployeeDocumentExpiryValue;
+            await TenantAdminApiClient.CreateEmployeeDocumentAsync(SessionState, SelectedBranch.Id, SelectedEmployee.Id, CreateEmployeeDocumentModel);
+            CreateEmployeeDocumentModel = new CreateEmployeeDocumentRequestModel();
+            CreateEmployeeDocumentExpiryValue = null;
+            await LoadSelectedEmployeeWorkspaceAsync();
+            FlashMessage = "Employee document added successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task SignOutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/", forceLoad: false);
+    }
+
+    private static string GetProductDisplayName(ProductListItemModel product)
+        => !string.IsNullOrWhiteSpace(product.NameEn)
+            ? product.NameEn
+            : !string.IsNullOrWhiteSpace(product.NameAr)
+                ? product.NameAr
+                : "Unnamed product";
+
+    private static Guid? ParseNullableGuid(string? value)
+        => Guid.TryParse(value, out var parsed) ? parsed : null;
+
+    private static TimeSpan ParseTime(string? value)
+        => TimeSpan.TryParse(value, out var parsed) ? parsed : TimeSpan.Zero;
+
+    private static string FormatMoney(decimal? amount)
+        => amount.HasValue ? $"{amount.Value:0.##} AED" : "Salary pending";
+
+    private static string MapAttendanceStatus(string? status)
+        => string.IsNullOrWhiteSpace(status) ? "No record"
+            : status.Equals("present", StringComparison.OrdinalIgnoreCase) ? "Present"
+            : status.Equals("late", StringComparison.OrdinalIgnoreCase) ? "Late"
+            : status.Equals("absent", StringComparison.OrdinalIgnoreCase) ? "Absent"
+            : status.Equals("leave", StringComparison.OrdinalIgnoreCase) ? "Leave"
+            : status.Equals("off", StringComparison.OrdinalIgnoreCase) ? "Weekly Off"
+            : status;
+
+    private static string FormatDateTime(DateTime? value)
+        => value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "-";
+
+    private static string FormatProductPrice(ProductListItemModel product)
+        => product.SellPrice is null ? "Price pending" : $"{product.SellPrice:0.##} {product.CurrencyCode}";
+
+    private static string GetServiceDisplayName(ServiceListItemModel service)
+        => !string.IsNullOrWhiteSpace(service.NameEn)
+            ? service.NameEn
+            : !string.IsNullOrWhiteSpace(service.NameAr)
+                ? service.NameAr
+                : "Unnamed service";
+
+    private static string FormatServicePrice(ServiceListItemModel service)
+        => $"{service.Price:0.##} {service.CurrencyCode}";
+
+    private static string FormatServiceDuration(int? durationMin)
+        => durationMin is null || durationMin <= 0 ? "Duration pending" : $"{durationMin.Value} min";
+
+    private static string BuildBranchWorkspacesLabel(PlatformBranchModel branch)
+    {
+        var enabled = 0;
+        if (branch.HasPosWorkspace) enabled++;
+        if (branch.HasAppointmentsWorkspace) enabled++;
+        if (branch.HasExpensesWorkspace) enabled++;
+        if (branch.HasPrintSettings) enabled++;
+        return $"{enabled}/4 Ready";
+    }
+}

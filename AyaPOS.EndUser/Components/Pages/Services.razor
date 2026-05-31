@@ -1,0 +1,507 @@
+@page "/services"
+@rendermode InteractiveServer
+@implements IDisposable
+@using Ayapos.EndUser.Models.Services
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Services
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject ServicesApiClient ServicesApiClient
+
+<PageTitle>Services</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="Services" Description="Browse branch services, highlight bookable offers quickly, and keep pricing and duration visible in one clean screen." SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="services" />
+
+    <section class="toolbar-panel">
+        <div class="toolbar-grid products-toolbar-grid">
+            <div>
+                <input class="form-input" value="@SearchText" @oninput="OnSearchInputAsync" placeholder="Search by service name" />
+                <div class="search-hint">Results refresh automatically after a short pause.</div>
+            </div>
+
+            <select class="form-input compact-input" @bind="PageSize" @bind:after="PageSizeChangedAsync">
+                <option value="10">10 / page</option>
+                <option value="25">25 / page</option>
+                <option value="50">50 / page</option>
+                <option value="100">100 / page</option>
+            </select>
+
+            <button class="submit-button" @onclick="RefreshAsync" disabled="@IsLoading">@(IsLoading ? "Refreshing..." : "Refresh")</button>
+        </div>
+    </section>
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Visible Services</span>
+            <strong class="metric-value">@TotalCount</strong>
+            <span class="metric-note">Current live service results from the selected branch.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Active on Screen</span>
+            <strong class="metric-value">@ActiveCount</strong>
+            <span class="metric-note">Services on this page that are currently available.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Timed Services</span>
+            <strong class="metric-value">@TimedCount</strong>
+            <span class="metric-note">Items showing an expected service duration.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Page Status</span>
+            <strong class="metric-value">@PageSummary</strong>
+            <span class="metric-note">Use search or paging to move through the service list.</span>
+        </article>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Quick Picks</span>
+                <h2>Services ready to book or charge</h2>
+            </div>
+            <p>High-value active services are surfaced here first for easier day-to-day use at the branch.</p>
+        </div>
+
+        @if (IsLoading && ServiceItems.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">Loading services...</div>
+        }
+        else if (FeaturedServices.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">No featured services are available yet. Add English service names and pricing to make this area more useful.</div>
+        }
+        else
+        {
+            <div class="featured-products-grid">
+                @foreach (var service in FeaturedServices)
+                {
+                    <article class="product-feature-card">
+                        <div class="product-feature-topline">
+                            <span class="status-pill @(service.IsActive ? "active" : "inactive")">@(service.IsActive ? "Active" : "Inactive")</span>
+                            <span class="product-feature-id">@GetCompactCode(service)</span>
+                        </div>
+                        <h3>@GetServiceDisplayName(service)</h3>
+                        <div class="product-feature-price">@FormatPrice(service)</div>
+                        <div class="product-feature-meta">Duration: @FormatDuration(service.DurationMin)</div>
+                        <div class="product-feature-meta">Currency: @service.CurrencyCode</div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Create Service</span>
+                <h2>Manage branch services</h2>
+            </div>
+            <p>Open service creation and updates in focused popups so the service page stays lighter and easier to scan.</p>
+        </div>
+
+        @if (CanManageCatalog)
+        {
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="OpenCreateServiceModal" disabled="@IsLoading">Create Service</button>
+                <button class="ghost-button" @onclick="RefreshAsync" disabled="@IsLoading">Refresh Services</button>
+            </div>
+        }
+        else
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">Service setup is managed from tenant admin. Branch users can view services here and use them in appointments or invoices, but they cannot change the catalog.</div>
+        }
+    </section>
+
+    <section class="products-table-wrap">
+        @if (!IsLoading && ServiceItems.Count == 0)
+        {
+            <div class="placeholder-panel" style="margin-top:20px;">No services match the current search.</div>
+        }
+        else if (ServiceItems.Count > 0)
+        {
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Duration</th>
+                        <th>Price</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var service in ServiceItems)
+                    {
+                        <tr>
+                            <td>
+                                <div class="table-primary-cell">@GetServiceDisplayName(service)</div>
+                                <div class="table-secondary-cell">@GetCompactCode(service)</div>
+                            </td>
+                            <td>@FormatDuration(service.DurationMin)</td>
+                            <td>@FormatPrice(service)</td>
+                            <td>
+                                <span class="status-pill @(service.IsActive ? "active" : "inactive")">
+                                    @(service.IsActive ? "Active" : "Inactive")
+                                </span>
+                            </td>
+                            <td>
+                                @if (CanManageCatalog)
+                                {
+                                    <button class="ghost-button" @onclick="() => SelectService(service)">Manage</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="pagination-panel">
+        <button class="ghost-button" @onclick="PreviousPageAsync" disabled="@(IsLoading || CurrentPage <= 1)">Previous</button>
+        <div class="pagination-summary">@PageSummary</div>
+        <button class="ghost-button" @onclick="NextPageAsync" disabled="@(IsLoading || CurrentPage >= TotalPages)">Next</button>
+    </section>
+
+    <ActionModal Visible="@ShowCreateServiceModal"
+                 Eyebrow="Create Service"
+                 Title="Add a branch service"
+                 Description="Create a new service from one focused popup without stretching the service page."
+                 OnClose="CloseCreateServiceModal">
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="createServiceNameEn">English Name</label>
+                <input id="createServiceNameEn" class="form-input" @bind="CreateServiceModel.NameEn" />
+            </div>
+            <div class="field">
+                <label for="createServiceNameAr">Arabic Name</label>
+                <input id="createServiceNameAr" class="form-input" @bind="CreateServiceModel.NameAr" />
+            </div>
+            <div class="field">
+                <label for="createServiceDuration">Duration (min)</label>
+                <input id="createServiceDuration" class="form-input" type="number" min="0" @bind="CreateServiceModel.DurationMin" />
+            </div>
+            <div class="field">
+                <label for="createServicePrice">Price</label>
+                <input id="createServicePrice" class="form-input" type="number" step="0.01" min="0" @bind="CreateServiceModel.Price" />
+            </div>
+            <div class="field">
+                <label for="createServiceCurrency">Currency</label>
+                <input id="createServiceCurrency" class="form-input" @bind="CreateServiceModel.CurrencyCode" />
+            </div>
+            <div class="field">
+                <label for="createServiceStatus">Status</label>
+                <select id="createServiceStatus" class="form-input" @bind="CreateServiceStatusValue">
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+            </div>
+        </div>
+        <div class="action-modal-footer">
+            <button class="ghost-button" @onclick="ResetCreateServiceForm" disabled="@IsLoading">Reset</button>
+            <button class="submit-button" @onclick="CreateServiceAsync" disabled="@IsLoading">Create Service</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@(ShowManageServiceModal && SelectedService is not null)"
+                 Eyebrow="Manage Service"
+                 Title="@ManageServiceTitle"
+                 Description="Update pricing, duration, and availability from one compact manage window."
+                 OnClose="CloseManageServiceModal">
+        @if (SelectedService is not null)
+        {
+            <div class="invoice-form-grid">
+                <div class="field">
+                    <label for="updateServiceNameEn">English Name</label>
+                    <input id="updateServiceNameEn" class="form-input" @bind="UpdateServiceModel.NameEn" />
+                </div>
+                <div class="field">
+                    <label for="updateServiceNameAr">Arabic Name</label>
+                    <input id="updateServiceNameAr" class="form-input" @bind="UpdateServiceModel.NameAr" />
+                </div>
+                <div class="field">
+                    <label for="updateServiceDuration">Duration (min)</label>
+                    <input id="updateServiceDuration" class="form-input" type="number" min="0" @bind="UpdateServiceModel.DurationMin" />
+                </div>
+                <div class="field">
+                    <label for="updateServicePrice">Price</label>
+                    <input id="updateServicePrice" class="form-input" type="number" step="0.01" min="0" @bind="UpdateServiceModel.Price" />
+                </div>
+                <div class="field">
+                    <label for="updateServiceCurrency">Currency</label>
+                    <input id="updateServiceCurrency" class="form-input" @bind="UpdateServiceModel.CurrencyCode" />
+                </div>
+                <div class="field">
+                    <label for="updateServiceStatus">Status</label>
+                    <select id="updateServiceStatus" class="form-input" @bind="SelectedServiceStatusValue">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="action-modal-footer">
+                <button class="ghost-button" @onclick="ToggleSelectedServiceActiveAsync" disabled="@IsLoading">@(SelectedService.IsActive ? "Deactivate Service" : "Activate Service")</button>
+                <button class="submit-button" @onclick="UpdateServiceAsync" disabled="@IsLoading">Update Service</button>
+            </div>
+        }
+    </ActionModal>
+</div>
+
+@code {
+    private CancellationTokenSource? _searchDebounceCts;
+    private bool _sessionChecked;
+    private bool _disposed;
+    private bool IsLoading { get; set; }
+    private bool ShowCreateServiceModal { get; set; }
+    private bool ShowManageServiceModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private string SearchText { get; set; } = string.Empty;
+    private int TotalCount { get; set; }
+    private int CurrentPage { get; set; } = 1;
+    private int PageSize { get; set; } = 25;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+    private int ActiveCount => ServiceItems.Count(x => x.IsActive);
+    private int TimedCount => ServiceItems.Count(x => x.DurationMin is not null && x.DurationMin > 0);
+    private IReadOnlyList<ServiceListItemModel> FeaturedServices => ServiceItems
+        .Where(x => x.IsActive)
+        .OrderByDescending(x => x.Price)
+        .ThenBy(x => GetServiceDisplayName(x))
+        .Take(4)
+        .ToList();
+    private bool CanManageCatalog => SessionState.IsTenantAdmin;
+    private string PageSummary => TotalCount == 0 ? "No results" : $"Page {CurrentPage} of {TotalPages}";
+    private string ManageServiceTitle => SelectedService is null ? "Manage service" : GetServiceDisplayName(SelectedService);
+    private List<ServiceListItemModel> ServiceItems { get; set; } = [];
+    private ServiceListItemModel? SelectedService { get; set; }
+    private CreateServiceRequestModel CreateServiceModel { get; set; } = new();
+    private UpdateServiceRequestModel UpdateServiceModel { get; set; } = new();
+    private string CreateServiceStatusValue { get; set; } = "true";
+    private string SelectedServiceStatusValue { get; set; } = "true";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked) return;
+        _sessionChecked = true;
+        await SessionState.InitializeAsync();
+        if (!SessionState.IsAuthenticated)
+        {
+            NavigationManager.NavigateTo("/");
+            return;
+        }
+        if (!SessionState.CanAccessServices)
+        {
+            NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+            return;
+        }
+        await LoadServicesAsync();
+        StateHasChanged();
+    }
+
+    private async Task OnSearchInputAsync(ChangeEventArgs args)
+    {
+        SearchText = args.Value?.ToString() ?? string.Empty;
+        CurrentPage = 1;
+        await QueueSearchAsync();
+    }
+
+    private async Task QueueSearchAsync()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        _searchDebounceCts = new CancellationTokenSource();
+        try { await Task.Delay(350, _searchDebounceCts.Token); }
+        catch (TaskCanceledException) { return; }
+        if (_disposed || !SessionState.IsAuthenticated) return;
+        await InvokeAsync(LoadServicesAsync);
+    }
+
+    private async Task RefreshAsync() { CurrentPage = 1; FlashMessage = string.Empty; await LoadServicesAsync(); }
+    private async Task PageSizeChangedAsync() { CurrentPage = 1; await LoadServicesAsync(); }
+    private async Task PreviousPageAsync() { if (CurrentPage <= 1) return; CurrentPage--; await LoadServicesAsync(); }
+    private async Task NextPageAsync() { if (CurrentPage >= TotalPages) return; CurrentPage++; await LoadServicesAsync(); }
+
+    private async Task LoadServicesAsync()
+    {
+        if (!SessionState.IsAuthenticated) return;
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        try
+        {
+            var result = await ServicesApiClient.GetServicesAsync(SessionState, SearchText, CurrentPage, PageSize);
+            ServiceItems = result.Items.ToList();
+            TotalCount = result.Total;
+            if (CurrentPage > TotalPages) CurrentPage = TotalPages;
+
+            if (SelectedService is not null)
+            {
+                SelectedService = ServiceItems.FirstOrDefault(x => x.Id == SelectedService.Id);
+                if (SelectedService is not null)
+                {
+                    UpdateServiceModel = MapUpdateModel(SelectedService);
+                    SelectedServiceStatusValue = SelectedService.IsActive ? "true" : "false";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            ServiceItems = [];
+            TotalCount = 0;
+        }
+        finally { IsLoading = false; }
+    }
+
+    private async Task CreateServiceAsync()
+    {
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            CreateServiceModel.IsActive = string.Equals(CreateServiceStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await ServicesApiClient.CreateServiceAsync(SessionState, CreateServiceModel);
+            ResetCreateServiceForm();
+            ShowCreateServiceModal = false;
+            FlashMessage = "Service created successfully.";
+            CurrentPage = 1;
+            await LoadServicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ResetCreateServiceForm()
+    {
+        CreateServiceModel = new CreateServiceRequestModel();
+        CreateServiceStatusValue = "true";
+    }
+
+    private void OpenCreateServiceModal()
+    {
+        ResetCreateServiceForm();
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowCreateServiceModal = true;
+    }
+
+    private Task CloseCreateServiceModal()
+    {
+        ShowCreateServiceModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void SelectService(ServiceListItemModel service)
+    {
+        SelectedService = service;
+        UpdateServiceModel = MapUpdateModel(service);
+        SelectedServiceStatusValue = service.IsActive ? "true" : "false";
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowManageServiceModal = true;
+    }
+
+    private void ClearSelectedService()
+    {
+        SelectedService = null;
+        UpdateServiceModel = new UpdateServiceRequestModel();
+        SelectedServiceStatusValue = "true";
+        ShowManageServiceModal = false;
+    }
+
+    private Task CloseManageServiceModal()
+    {
+        ClearSelectedService();
+        return Task.CompletedTask;
+    }
+
+    private async Task UpdateServiceAsync()
+    {
+        if (SelectedService is null)
+            return;
+
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            UpdateServiceModel.IsActive = string.Equals(SelectedServiceStatusValue, "true", StringComparison.OrdinalIgnoreCase);
+            await ServicesApiClient.UpdateServiceAsync(SessionState, SelectedService.Id, UpdateServiceModel);
+            ShowManageServiceModal = false;
+            FlashMessage = "Service updated successfully.";
+            await LoadServicesAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ToggleSelectedServiceActiveAsync()
+    {
+        if (SelectedService is null)
+            return;
+
+        SelectedServiceStatusValue = SelectedService.IsActive ? "false" : "true";
+        await UpdateServiceAsync();
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private static string FormatPrice(ServiceListItemModel service)
+        => service.Price > 0 ? $"{service.Price:0.##} {service.CurrencyCode}" : "Price pending";
+
+    private static string FormatDuration(int? minutes)
+        => minutes is null || minutes <= 0 ? "Duration pending" : $"{minutes.Value} min";
+
+    private static string GetServiceDisplayName(ServiceListItemModel service)
+        => !string.IsNullOrWhiteSpace(service.NameEn)
+            ? service.NameEn
+            : $"Service {service.Id.ToString()[..8].ToUpperInvariant()}";
+
+    private static string GetCompactCode(ServiceListItemModel service)
+        => service.Id.ToString()[..8].ToUpperInvariant();
+
+    private static UpdateServiceRequestModel MapUpdateModel(ServiceListItemModel service)
+        => new()
+        {
+            NameAr = service.NameAr ?? string.Empty,
+            NameEn = service.NameEn ?? string.Empty,
+            DurationMin = service.DurationMin,
+            Price = service.Price,
+            CurrencyCode = string.IsNullOrWhiteSpace(service.CurrencyCode) ? "AED" : service.CurrencyCode,
+            IsActive = service.IsActive
+        };
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+    }
+}

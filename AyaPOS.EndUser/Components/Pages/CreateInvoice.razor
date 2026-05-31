@@ -1,0 +1,557 @@
+@page "/invoices/create"
+@rendermode InteractiveServer
+@using Ayapos.EndUser.Models.Customers
+@using Ayapos.EndUser.Models.Invoices
+@using Ayapos.EndUser.Models.Products
+@using Ayapos.EndUser.Models.Services
+@using Ayapos.EndUser.Services.Auth
+@using Ayapos.EndUser.Services.Customers
+@using Ayapos.EndUser.Services.Invoices
+@using Ayapos.EndUser.Services.Products
+@using Ayapos.EndUser.Services.Services
+@inject NavigationManager NavigationManager
+@inject SessionState SessionState
+@inject CustomersApiClient CustomersApiClient
+@inject ProductsApiClient ProductsApiClient
+@inject ServicesApiClient ServicesApiClient
+@inject InvoicesApiClient InvoicesApiClient
+
+<PageTitle>Create Invoice</PageTitle>
+
+<div class="products-page">
+    <AppPageHeader Title="Create Invoice" Description="Create a draft invoice, attach a customer if needed, add billable lines, and finalize when the invoice is ready for payment." SessionState="@SessionState" OnLogout="LogoutAsync" />
+
+    <RoleAwareSectionTabs Current="create-invoice" />
+
+    <NotificationPopup SuccessMessage="@FlashMessage" ErrorMessage="@ErrorMessage" />
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Invoice Builder</span>
+                <h2>@BuilderContextTitle</h2>
+            </div>
+            <p>@BuilderContextDescription</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            <button class="ghost-button" @onclick="RefreshBuilderAsync" disabled="@IsBusy">Refresh Builder</button>
+            @if (CurrentInvoice is null)
+            {
+                <button class="submit-button" @onclick="OpenCreateDraftModal" disabled="@IsBusy">Create Draft</button>
+            }
+            else if (CurrentInvoice.Status == "Draft")
+            {
+                <button class="submit-button" @onclick="OpenAddLineModal" disabled="@IsBusy">Add Line</button>
+            }
+        </div>
+    </section>
+
+    <section class="showcase-panel">
+        <div class="showcase-header">
+            <div>
+                <span class="eyebrow">Step 1</span>
+                <h2>Start a clean draft invoice</h2>
+            </div>
+            <p>Select a customer or keep it as walk-in, then create the draft before adding products or services.</p>
+        </div>
+
+        <div class="invoice-actions" style="margin-top:16px;">
+            @if (CurrentInvoice is null)
+            {
+                <button class="submit-button" @onclick="OpenCreateDraftModal" disabled="@IsBusy">
+                    Create Draft
+                </button>
+            }
+
+            @if (CurrentInvoice is not null)
+            {
+                <button class="ghost-button" @onclick="ReloadInvoiceAsync" disabled="@IsBusy">Refresh Invoice</button>
+                <button class="submit-button" @onclick="OpenFinalizeInvoiceModal" disabled="@(IsBusy || CurrentInvoice.Items.Count == 0 || CurrentInvoice.Status != "Draft")">Finalize Invoice</button>
+                <a class="section-tab small-tab" href="@($"/invoices/{CurrentInvoice.Id}")">Details</a>
+            }
+        </div>
+    </section>
+
+    <section class="metrics-grid">
+        <article class="metric-card">
+            <span class="metric-label">Selected Customer</span>
+            <strong class="metric-value">@CustomerSummary</strong>
+            <span class="metric-note">You can leave the invoice as walk-in if no customer is needed.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Draft Status</span>
+            <strong class="metric-value">@InvoiceStatusSummary</strong>
+            <span class="metric-note">Create the draft first, then add products or services.</span>
+        </article>
+
+        <article class="metric-card">
+            <span class="metric-label">Invoice Lines</span>
+            <strong class="metric-value">@ItemCountSummary</strong>
+            <span class="metric-note">Each added product or service appears immediately in the invoice list below.</span>
+        </article>
+
+        <article class="metric-card accent">
+            <span class="metric-label">Current Total</span>
+            <strong class="metric-value">@InvoiceTotalSummary</strong>
+            <span class="metric-note">Finalize when the invoice content and total are confirmed.</span>
+        </article>
+    </section>
+
+    @if (CurrentInvoice is not null)
+    {
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Step 2</span>
+                    <h2>Add products or services</h2>
+                </div>
+                <p>The price is loaded from the selected item and can still be adjusted before adding the line.</p>
+            </div>
+
+            <div class="invoice-actions" style="margin-top:16px;">
+                <button class="submit-button" @onclick="OpenAddLineModal" disabled="@IsBusy">Add to Invoice</button>
+            </div>
+        </section>
+
+        <section class="showcase-panel">
+            <div class="showcase-header">
+                <div>
+                    <span class="eyebrow">Step 3</span>
+                    <h2>Review the draft before finalizing</h2>
+                </div>
+                <p>Check the customer, totals, and each line before moving to the payment stage.</p>
+            </div>
+
+            <div class="metrics-grid" style="margin-top:18px;">
+                <article class="metric-card">
+                    <span class="metric-label">Invoice Code</span>
+                    <strong class="metric-value">@CurrentInvoice.InvoiceCode</strong>
+                    <span class="metric-note">Created at @CurrentInvoice.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">Customer</span>
+                    <strong class="metric-value">@(string.IsNullOrWhiteSpace(CurrentInvoice.CustomerName) ? "Walk-in" : CurrentInvoice.CustomerName)</strong>
+                    <span class="metric-note">Customer association for this draft invoice.</span>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-label">Status</span>
+                    <strong class="metric-value">@CurrentInvoice.Status</strong>
+                    <span class="metric-note">Draft invoices can still receive new lines before finalizing.</span>
+                </article>
+
+                <article class="metric-card accent">
+                    <span class="metric-label">Remaining</span>
+                    <strong class="metric-value">@FormatMoney(CurrentInvoice.Remaining)</strong>
+                    <span class="metric-note">After finalizing, payments can be recorded from the invoice details screen.</span>
+                </article>
+            </div>
+        </section>
+
+        <section class="products-table-wrap">
+            @if (CurrentInvoice.Items.Count == 0)
+            {
+                <div class="placeholder-panel" style="margin-top:20px;">The invoice is empty. Add the first product or service.</div>
+            }
+            else
+            {
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Name</th>
+                            <th>Qty</th>
+                            <th>Unit Price</th>
+                            <th>Line Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in CurrentInvoice.Items)
+                        {
+                            <tr>
+                                <td>@item.ItemType</td>
+                                <td>
+                                    <div class="table-primary-cell">@item.Name</div>
+                                </td>
+                                <td>@item.Qty</td>
+                                <td>@FormatMoney(item.UnitPrice)</td>
+                                <td>@FormatMoney(item.LineTotal)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+
+    <ActionModal Visible="@ShowCreateDraftModal"
+                 Eyebrow="Create Draft"
+                 Title="Start a clean invoice draft"
+                 Description="Choose an existing customer or leave the invoice as walk-in, then create the draft without pushing the whole page down."
+                 OnClose="CloseCreateDraftModal">
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="invoiceCustomerId">Customer</label>
+                <select id="invoiceCustomerId" class="form-input" @bind="SelectedCustomerId" disabled="@(CurrentInvoice is not null)">
+                    <option value="">Walk-in / No customer</option>
+                    @foreach (var customer in CustomerOptions)
+                    {
+                        <option value="@customer.Id">@customer.FullName (@(string.IsNullOrWhiteSpace(customer.Phone) ? "No phone" : customer.Phone))</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="invoice-actions">
+            <button class="submit-button" @onclick="CreateDraftAsync" disabled="@(IsBusy || CurrentInvoice is not null)">
+                @(IsBusy && CurrentInvoice is null ? "Creating..." : "Create Draft")
+            </button>
+            <button class="ghost-button" @onclick="CloseCreateDraftModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@ShowAddLineModal"
+                 Eyebrow="Add Line"
+                 Title="Add a product or service"
+                 Description="Choose the item type, pick the exact branch item, then confirm quantity and price before adding it to the draft."
+                 OnClose="CloseAddLineModal">
+        <div class="invoice-form-grid">
+            <div class="field">
+                <label for="sourceType">Item Type</label>
+                <select id="sourceType" class="form-input" @bind="SelectedSourceType" @bind:after="OnSourceTypeChangedAsync">
+                    <option value="Product">Product</option>
+                    <option value="Service">Service</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="itemId">Item</label>
+                <select id="itemId" class="form-input" @bind="SelectedItemId" @bind:after="OnSelectedItemChangedAsync">
+                    <option value="">Select an item</option>
+                    @foreach (var option in CurrentOptions)
+                    {
+                        <option value="@option.Id">@option.Label</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="qty">Quantity</label>
+                <input id="qty" class="form-input" type="number" min="1" @bind="Quantity" />
+            </div>
+
+            <div class="field">
+                <label for="price">Price</label>
+                <input id="price" class="form-input" type="number" step="0.01" min="0" @bind="PriceValue" />
+            </div>
+        </div>
+
+        <div class="invoice-actions">
+            <button class="submit-button" @onclick="AddLineAsync" disabled="@IsBusy">Add to Invoice</button>
+            <button class="ghost-button" @onclick="CloseAddLineModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+
+    <ActionModal Visible="@ShowFinalizeInvoiceModal"
+                 Eyebrow="Finalize Invoice"
+                 Title="Lock the draft and move it forward"
+                 Description="After finalizing, the invoice moves out of draft and becomes ready for payment collection from the invoice details screen."
+                 OnClose="CloseFinalizeInvoiceModal">
+        <div class="metrics-grid">
+            <article class="metric-card">
+                <span class="metric-label">Invoice Lines</span>
+                <strong class="metric-value">@ItemCountSummary</strong>
+                <span class="metric-note">Review the current draft lines before locking the invoice.</span>
+            </article>
+
+            <article class="metric-card accent">
+                <span class="metric-label">Current Total</span>
+                <strong class="metric-value">@InvoiceTotalSummary</strong>
+                <span class="metric-note">This total becomes the payable invoice amount after finalizing.</span>
+            </article>
+        </div>
+
+        <div class="invoice-actions">
+            <button class="submit-button" @onclick="FinalizeInvoiceAsync" disabled="@IsBusy">Finalize Invoice</button>
+            <button class="ghost-button" @onclick="CloseFinalizeInvoiceModal" disabled="@IsBusy">Cancel</button>
+        </div>
+    </ActionModal>
+</div>
+
+@code {
+    private bool _sessionChecked;
+    private bool IsBusy { get; set; }
+    private bool ShowCreateDraftModal { get; set; }
+    private bool ShowAddLineModal { get; set; }
+    private bool ShowFinalizeInvoiceModal { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private string FlashMessage { get; set; } = string.Empty;
+    private string SelectedCustomerId { get; set; } = string.Empty;
+    private string SelectedSourceType { get; set; } = "Product";
+    private string SelectedItemId { get; set; } = string.Empty;
+    private int Quantity { get; set; } = 1;
+    private decimal PriceValue { get; set; }
+    private InvoiceDetailsModel? CurrentInvoice { get; set; }
+    private List<CustomerListItemModel> CustomerOptions { get; set; } = [];
+    private List<ProductListItemModel> ProductOptions { get; set; } = [];
+    private List<ServiceListItemModel> ServiceOptions { get; set; } = [];
+
+    private IReadOnlyList<ItemOption> CurrentOptions => SelectedSourceType == "Service"
+        ? ServiceOptions.Select(MapService).ToList()
+        : ProductOptions.Select(MapProduct).ToList();
+    private string BuilderContextTitle => string.IsNullOrWhiteSpace(SessionState.BranchName)
+        ? "Create a new branch invoice"
+        : $"{SessionState.BranchName} invoice builder";
+    private string BuilderContextDescription => CurrentInvoice is null
+        ? "Start with a clean draft, then add products or services one by one before finalizing."
+        : $"You are editing draft {CurrentInvoice.InvoiceCode}. Review every line before finalizing the invoice.";
+
+    private string CustomerSummary
+        => CurrentInvoice is not null
+            ? string.IsNullOrWhiteSpace(CurrentInvoice.CustomerName) ? "Walk-in" : CurrentInvoice.CustomerName
+            : string.IsNullOrWhiteSpace(SelectedCustomerId)
+                ? "Walk-in"
+                : CustomerOptions.FirstOrDefault(x => x.Id.ToString() == SelectedCustomerId)?.FullName ?? "Selected";
+
+    private string InvoiceStatusSummary => CurrentInvoice?.Status ?? "Not created";
+    private string ItemCountSummary => CurrentInvoice is null ? "0 lines" : $"{CurrentInvoice.Items.Count} line(s)";
+    private string InvoiceTotalSummary => CurrentInvoice is null ? "0 AED" : FormatMoney(CurrentInvoice.Total);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionChecked) return;
+        _sessionChecked = true;
+        try
+        {
+            await SessionState.InitializeAsync();
+            if (!SessionState.IsAuthenticated)
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+            if (!SessionState.CanAccessInvoices)
+            {
+                NavigationManager.NavigateTo(SessionState.IsTenantAdmin ? "/tenant-admin" : "/workspace");
+                return;
+            }
+            await LoadLookupDataAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadLookupDataAsync()
+    {
+        ErrorMessage = string.Empty;
+        try
+        {
+            var customersTask = CustomersApiClient.GetCustomersAsync(SessionState, null, 1, 100);
+            var productsTask = ProductsApiClient.GetProductsAsync(SessionState, null, 1, 100);
+            var servicesTask = ServicesApiClient.GetServicesAsync(SessionState, null, 1, 100);
+            await Task.WhenAll(customersTask, productsTask, servicesTask);
+            CustomerOptions = customersTask.Result.Items.Where(x => x.IsActive).OrderBy(x => x.FullName).ToList();
+            ProductOptions = productsTask.Result.Items.Where(x => x.IsActive).ToList();
+            ServiceOptions = servicesTask.Result.Items.Where(x => x.IsActive).ToList();
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+    }
+
+    private async Task RefreshBuilderAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+
+        try
+        {
+            await LoadLookupDataAsync();
+
+            if (CurrentInvoice is not null)
+                CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+
+            FlashMessage = "Invoice builder refreshed successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private void OpenCreateDraftModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowCreateDraftModal = true;
+    }
+
+    private Task CloseCreateDraftModal()
+    {
+        ShowCreateDraftModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void OpenAddLineModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowAddLineModal = true;
+    }
+
+    private Task CloseAddLineModal()
+    {
+        ShowAddLineModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void OpenFinalizeInvoiceModal()
+    {
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        ShowFinalizeInvoiceModal = true;
+    }
+
+    private Task CloseFinalizeInvoiceModal()
+    {
+        ShowFinalizeInvoiceModal = false;
+        return Task.CompletedTask;
+    }
+
+    private Task OnSourceTypeChangedAsync() { SelectedItemId = string.Empty; PriceValue = 0; return Task.CompletedTask; }
+    private Task OnSelectedItemChangedAsync() { SyncPriceFromSelection(); return Task.CompletedTask; }
+
+    private async Task CreateDraftAsync()
+    {
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            Guid? customerId = null;
+            if (!string.IsNullOrWhiteSpace(SelectedCustomerId) && Guid.TryParse(SelectedCustomerId, out var parsedCustomerId))
+                customerId = parsedCustomerId;
+
+            var invoiceId = await InvoicesApiClient.CreateDraftAsync(SessionState, new CreateInvoiceRequestModel { CustomerId = customerId });
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, invoiceId);
+            ShowCreateDraftModal = false;
+            FlashMessage = "Draft invoice created successfully.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task AddLineAsync()
+    {
+        if (CurrentInvoice is null) { ErrorMessage = "Create the invoice first."; return; }
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        if (!Guid.TryParse(SelectedItemId, out var itemId)) { ErrorMessage = "Select a product or service first."; return; }
+        if (Quantity <= 0) { ErrorMessage = "Quantity must be greater than zero."; return; }
+
+        IsBusy = true;
+        try
+        {
+            var cents = (int)Math.Round(PriceValue * 100m, MidpointRounding.AwayFromZero);
+            await InvoicesApiClient.AddItemAsync(SessionState, CurrentInvoice.Id, new AddInvoiceLineRequestModel
+            {
+                ItemType = SelectedSourceType,
+                ItemId = itemId,
+                Qty = Quantity,
+                PriceOverrideCents = cents,
+                PriceOverrideReason = "End user web app"
+            });
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            ShowAddLineModal = false;
+            FlashMessage = "Item added to invoice.";
+            Quantity = 1;
+            SelectedItemId = string.Empty;
+            PriceValue = 0;
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task ReloadInvoiceAsync()
+    {
+        if (CurrentInvoice is null) return;
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try { CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id); }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task FinalizeInvoiceAsync()
+    {
+        if (CurrentInvoice is null) return;
+        IsBusy = true;
+        ErrorMessage = string.Empty;
+        FlashMessage = string.Empty;
+        try
+        {
+            await InvoicesApiClient.FinalizeAsync(SessionState, CurrentInvoice.Id);
+            CurrentInvoice = await InvoicesApiClient.GetInvoiceAsync(SessionState, CurrentInvoice.Id);
+            ShowFinalizeInvoiceModal = false;
+            FlashMessage = "Invoice finalized successfully.";
+        }
+        catch (Exception ex) { ErrorMessage = ex.Message; }
+        finally { IsBusy = false; }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await SessionState.SignOutAsync();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private void SyncPriceFromSelection()
+    {
+        if (!Guid.TryParse(SelectedItemId, out var itemId)) return;
+        if (SelectedSourceType == "Service")
+        {
+            var service = ServiceOptions.FirstOrDefault(x => x.Id == itemId);
+            if (service is not null) PriceValue = service.Price;
+            return;
+        }
+        var product = ProductOptions.FirstOrDefault(x => x.Id == itemId);
+        if (product?.SellPrice is not null) PriceValue = product.SellPrice.Value;
+    }
+
+    private static ItemOption MapProduct(ProductListItemModel product)
+        => new(product.Id, $"{GetProductDisplayName(product)} - {FormatProductPrice(product)}");
+
+    private static ItemOption MapService(ServiceListItemModel service)
+        => new(service.Id, $"{GetServiceDisplayName(service)} - {FormatServicePrice(service)}");
+
+    private static string FormatProductPrice(ProductListItemModel product)
+        => product.SellPrice is null ? "Price pending" : $"{product.SellPrice:0.##} {product.CurrencyCode}";
+
+    private static string FormatServicePrice(ServiceListItemModel service)
+        => service.Price > 0 ? $"{service.Price:0.##} {service.CurrencyCode}" : "Price pending";
+
+    private static string FormatMoney(decimal amount) => $"{amount:0.##} AED";
+
+    private static string GetProductDisplayName(ProductListItemModel product)
+        => !string.IsNullOrWhiteSpace(product.NameEn)
+            ? product.NameEn
+            : !string.IsNullOrWhiteSpace(product.Sku)
+                ? $"Product {product.Sku}"
+                : "Unnamed product";
+
+    private static string GetServiceDisplayName(ServiceListItemModel service)
+        => !string.IsNullOrWhiteSpace(service.NameEn)
+            ? service.NameEn
+            : $"Service {service.Id.ToString()[..8].ToUpperInvariant()}";
+
+    private sealed record ItemOption(Guid Id, string Label);
+}

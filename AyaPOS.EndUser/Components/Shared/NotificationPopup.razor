@@ -1,0 +1,119 @@
+@if (ShowSuccess || ShowError)
+{
+    <div class="notification-popup-stack" aria-live="polite" aria-atomic="true">
+        @if (ShowSuccess)
+        {
+            <div class="message message-success notification-popup-card">
+                <button type="button" class="notification-popup-close" @onclick="DismissSuccess" aria-label="Close success message">x</button>
+                <div class="notification-popup-title">Success</div>
+                <div>@DisplaySuccessMessage</div>
+            </div>
+        }
+
+        @if (ShowError)
+        {
+            <div class="message message-error notification-popup-card">
+                <button type="button" class="notification-popup-close" @onclick="DismissError" aria-label="Close error message">x</button>
+                <div class="notification-popup-title">Attention</div>
+                <div>@DisplayErrorMessage</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string? _lastSuccessMessage;
+    private string? _lastErrorMessage;
+
+    [Parameter]
+    public string? SuccessMessage { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    private bool ShowSuccess { get; set; }
+    private bool ShowError { get; set; }
+    private string DisplaySuccessMessage => NormalizeSuccessMessage(SuccessMessage);
+    private string DisplayErrorMessage => NormalizeErrorMessage(ErrorMessage);
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(_lastSuccessMessage, SuccessMessage, StringComparison.Ordinal))
+        {
+            _lastSuccessMessage = SuccessMessage;
+            ShowSuccess = !string.IsNullOrWhiteSpace(SuccessMessage);
+        }
+
+        if (!string.Equals(_lastErrorMessage, ErrorMessage, StringComparison.Ordinal))
+        {
+            _lastErrorMessage = ErrorMessage;
+            ShowError = !string.IsNullOrWhiteSpace(ErrorMessage);
+        }
+    }
+
+    private void DismissSuccess() => ShowSuccess = false;
+
+    private void DismissError() => ShowError = false;
+
+    private static string NormalizeSuccessMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return string.Empty;
+
+        return message.Trim();
+    }
+
+    private static string NormalizeErrorMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return string.Empty;
+
+        var compact = message.Replace("\r", " ").Replace("\n", " ").Trim();
+
+        if (compact.Contains("actively refused it", StringComparison.OrdinalIgnoreCase) ||
+            compact.Contains("connection refused", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The API connection is not available right now. Refresh the page after the backend starts.";
+        }
+
+        if (compact.Contains("Nullable object must have a value", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Some saved branch data is incomplete. Refresh the page and try the action again.";
+        }
+
+        if (compact.Contains("The input does not contain any JSON tokens", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The server returned an empty response. Refresh the page and try again.";
+        }
+
+        if (compact.Contains("ConnectionString property has not been initialized", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The database connection is not ready on the server. Restart the API and try again.";
+        }
+
+        if (compact.Contains("Invalid object name", StringComparison.OrdinalIgnoreCase))
+        {
+            return "A required database table is missing. Apply the latest database updates and try again.";
+        }
+
+        if (compact.Contains("Invalid column name", StringComparison.OrdinalIgnoreCase))
+        {
+            return "The database schema is behind the latest application changes. Apply the latest database updates and try again.";
+        }
+
+        var stackIndex = compact.IndexOf(" at ", StringComparison.Ordinal);
+        if (stackIndex > 0)
+            compact = compact[..stackIndex].Trim();
+
+        if (compact.StartsWith("System.", StringComparison.Ordinal))
+        {
+            var colonIndex = compact.IndexOf(':');
+            if (colonIndex >= 0 && colonIndex < compact.Length - 1)
+                compact = compact[(colonIndex + 1)..].Trim();
+        }
+
+        return compact.Length <= 220
+            ? compact
+            : $"{compact[..217].TrimEnd()}...";
+    }
+}

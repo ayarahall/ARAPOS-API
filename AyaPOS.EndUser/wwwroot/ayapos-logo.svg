@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="title desc">
+  <title id="title">AyaPOS logo</title>
+  <desc id="desc">A stylized pink ladybug icon for AyaPOS.</desc>
+  <rect width="220" height="220" rx="36" fill="#ffffff"/>
+  <g transform="translate(0 6)">
+    <path d="M109 48c8 0 15 6 16 14l2 12H91l2-12c1-8 8-14 16-14z" fill="#161616"/>
+    <path d="M95 39c-10-16-25-9-21 7m51-7c10-16 25-9 21 7" fill="none" stroke="#161616" stroke-width="5.5" stroke-linecap="round"/>
+    <circle cx="74" cy="46" r="9" fill="none" stroke="#161616" stroke-width="5.5"/>
+    <circle cx="146" cy="46" r="9" fill="none" stroke="#161616" stroke-width="5.5"/>
+    <path d="M109 72c-31 0-57 24-57 54 0 16 7 30 17 41l40-19V72z" fill="#e61d48"/>
+    <path d="M111 72c31 0 57 24 57 54 0 16-7 30-17 41l-40-19V72z" fill="#ef274f"/>
+    <path d="M110 98l21 58c-7 7-14 11-21 12-7-1-14-5-21-12l21-58z" fill="#111111"/>
+    <rect x="106.5" y="72" width="7" height="70" rx="3.5" fill="#ffffff" opacity="0.95"/>
+    <circle cx="74" cy="118" r="13" fill="#ffffff"/>
+    <circle cx="96" cy="94" r="6" fill="#ffffff"/>
+    <circle cx="95" cy="134" r="5" fill="#ffffff"/>
+    <circle cx="124" cy="94" r="8" fill="#ffffff"/>
+    <circle cx="142" cy="112" r="12" fill="#ffffff"/>
+    <circle cx="130" cy="136" r="6" fill="#ffffff"/>
+  </g>
+</svg>
