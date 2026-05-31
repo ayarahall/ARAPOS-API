@@ -1,3 +1,6 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Ayapos.Api.Contracts.Auth;
 using Ayapos.Api.Contracts.Platform;
 using Ayapos.Api.Data;
@@ -6,7 +9,6 @@ using Ayapos.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace Ayapos.Api.Controllers;
 
@@ -73,18 +75,19 @@ public sealed class AuthController : ControllerBase
         if (user is null)
             return Unauthorized("Invalid user.");
 
-        var isValid = await _db.Database.SqlQueryRaw<int>(
-            """
-            SELECT CASE
-              WHEN up.PinHash = HASHBYTES('SHA2_256', up.PinSalt + CONVERT(varbinary(max), {2}))
-              THEN 1 ELSE 0 END AS Value
-            FROM dbo.UserPins up
-            WHERE up.UserId = {0} AND up.TenantId = {1}
-            """,
-            user.Id, tenant.Id, req.Pin)
-            .SingleOrDefaultAsync();
+        var pinRecord = await _db.UserPins
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == user.Id && p.TenantId == tenant.Id);
 
-        if (isValid != 1)
+        if (pinRecord is null)
+            return Unauthorized("Invalid PIN.");
+
+        // Replicate SQL Server: SHA256(PinSalt + CONVERT(varbinary, pin))
+        // CONVERT from nvarchar uses UTF-16 LE encoding
+        var combined = pinRecord.PinSalt.Concat(Encoding.Unicode.GetBytes(req.Pin)).ToArray();
+        var computed = SHA256.HashData(combined);
+        if (!computed.SequenceEqual(pinRecord.PinHash))
             return Unauthorized("Invalid PIN.");
 
         var role = string.IsNullOrWhiteSpace(user.Role) ? "CASHIER" : user.Role;
@@ -314,31 +317,19 @@ public sealed class AuthController : ControllerBase
             .FirstOrDefaultAsync();
     }
 
-    private async Task<User?> GetBranchUserForTenantAsync(Guid tenantId, Guid branchId, string username)
+    private Task<User?> GetBranchUserForTenantAsync(Guid tenantId, Guid branchId, string username)
     {
-        var userId = await _db.Database.SqlQueryRaw<Guid>(
-            """
-            SELECT TOP(1) u.Id AS Value
-            FROM dbo.BranchUserAssignments AS assignment
-            INNER JOIN dbo.UserPins AS pin
-                ON pin.UserId = assignment.UserId
-               AND pin.TenantId = assignment.TenantId
-            INNER JOIN dbo.Users AS u
-                ON u.Id = assignment.UserId
-            WHERE assignment.TenantId = {0}
-              AND assignment.BranchId = {1}
-              AND u.Username = {2}
-            """,
-            tenantId, branchId, username)
+        return (
+            from a in _db.BranchUserAssignments.IgnoreQueryFilters()
+            join pin in _db.UserPins.IgnoreQueryFilters() on new { a.UserId, a.TenantId } equals new { pin.UserId, pin.TenantId }
+            join u in _db.Users on a.UserId equals u.Id
+            where a.TenantId == tenantId &&
+                  a.BranchId == branchId &&
+                  u.Username == username &&
+                  u.IsActive &&
+                  u.LicenseStatus == "ACTIVE" &&
+                  u.LicenseExpiresAt > DateTime.UtcNow
+            select u)
             .FirstOrDefaultAsync();
-
-        if (userId == Guid.Empty)
-            return null;
-
-        return await _db.Users.FirstOrDefaultAsync(u =>
-            u.Id == userId &&
-            u.IsActive &&
-            u.LicenseStatus == "ACTIVE" &&
-            u.LicenseExpiresAt > DateTime.UtcNow);
     }
 }
