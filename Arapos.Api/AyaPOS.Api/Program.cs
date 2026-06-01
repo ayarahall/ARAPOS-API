@@ -211,7 +211,17 @@ app.UseCors("AllowReact");
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AyaposDbContext>();
-    await db.Database.CanConnectAsync();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        await db.Database.CanConnectAsync();
+        logger.LogInformation("Database connected. Provider: {Provider}", db.Database.ProviderName);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Database connection failed at startup — check SQLSERVER_URL or DATABASE_URL. Provider: {Provider}", db.Database.ProviderName);
+        // Do not crash — individual requests will fail with a clear error
+    }
 
     var isPostgres = db.Database.ProviderName?.Contains("Npgsql") == true;
     if (isPostgres)

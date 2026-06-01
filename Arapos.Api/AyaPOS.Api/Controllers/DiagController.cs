@@ -21,6 +21,9 @@ public sealed class DiagController : ControllerBase
     public async Task<IActionResult> DbInfo(CancellationToken ct)
     {
         var provider = _db.Database.ProviderName ?? "unknown";
+        var sqlserverUrlSet = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SQLSERVER_URL"));
+        var databaseUrlSet = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DATABASE_URL"));
+        var activeSource = sqlserverUrlSet ? "SQLSERVER_URL" : databaseUrlSet ? "DATABASE_URL" : "appsettings";
 
         var tenantCount = await _db.Tenants.IgnoreQueryFilters().CountAsync(ct);
         var branchCount = await _db.Branches.IgnoreQueryFilters().CountAsync(ct);
@@ -93,6 +96,9 @@ public sealed class DiagController : ControllerBase
         return Ok(new
         {
             provider,
+            activeSource,
+            sqlserverUrlSet,
+            databaseUrlSet,
             tenantCount,
             branchCount,
             kiraz = kirazDetail
