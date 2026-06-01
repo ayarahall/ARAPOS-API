@@ -39,10 +39,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// DbContext — prefer DATABASE_URL env var (Render postgres:// URI), fall back to appsettings
+// DbContext — SQLSERVER_URL takes priority (Azure SQL on Render, won't be overridden by Render's managed postgres).
+// Falls back to DATABASE_URL (Render-managed postgres://) then appsettings.
 builder.Services.AddDbContext<AyaposDbContext>(opt =>
 {
-    var raw = Environment.GetEnvironmentVariable("DATABASE_URL")
+    var raw = Environment.GetEnvironmentVariable("SQLSERVER_URL")
+              ?? Environment.GetEnvironmentVariable("DATABASE_URL")
               ?? builder.Configuration.GetConnectionString("AyaposDb")
               ?? throw new InvalidOperationException("Missing DB connection string.");
 
