@@ -211,6 +211,46 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AyaposDbContext>();
     await db.Database.CanConnectAsync();
 
+    var isPostgres = db.Database.ProviderName?.Contains("Npgsql") == true;
+    if (isPostgres)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "BranchSettings"
+                ADD COLUMN IF NOT EXISTS "AppointmentsRequireCustomer" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "AppointmentsPreventOverlap" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "AppointmentsAutoNoShow" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "AppointmentsCheckInCreatesInvoice" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "AppointmentsAllowNoShow" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "AppointmentsAllowCancel" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "ExpensesRequireApproval" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "ExpensesDeductCash" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "ExpensesNotifyApprovers" boolean NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS "ExpensesAllowAiAssist" boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "PosRequirePaymentReference" boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "PosRequireAppointment" boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "PosAutoPrintReceipt" boolean NOT NULL DEFAULT false,
+                ADD COLUMN IF NOT EXISTS "PosAllowMultipleInvoiceTabs" boolean NOT NULL DEFAULT true;
+            """);
+    }
+    else
+    {
+        foreach (var (col, def) in new (string, string)[]
+        {
+            ("AppointmentsRequireCustomer", "1"), ("AppointmentsPreventOverlap", "1"),
+            ("AppointmentsAutoNoShow", "1"), ("AppointmentsCheckInCreatesInvoice", "1"),
+            ("AppointmentsAllowNoShow", "1"), ("AppointmentsAllowCancel", "1"),
+            ("ExpensesRequireApproval", "1"), ("ExpensesDeductCash", "1"),
+            ("ExpensesNotifyApprovers", "1"), ("ExpensesAllowAiAssist", "0"),
+            ("PosRequirePaymentReference", "0"), ("PosRequireAppointment", "0"),
+            ("PosAutoPrintReceipt", "0"), ("PosAllowMultipleInvoiceTabs", "1"),
+        })
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                $"IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BranchSettings') AND name = '{col}') " +
+                $"ALTER TABLE BranchSettings ADD [{col}] BIT NOT NULL DEFAULT {def};");
+        }
+    }
+
     var ownerBootstrap = scope.ServiceProvider.GetRequiredService<OwnerBootstrapService>();
     await ownerBootstrap.EnsureOwnerAsync();
 }

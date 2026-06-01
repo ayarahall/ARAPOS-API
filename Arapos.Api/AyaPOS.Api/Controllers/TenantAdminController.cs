@@ -245,6 +245,85 @@ public sealed class TenantAdminController : ControllerBase
         return Ok(MapPrintSettings(settings));
     }
 
+    [HttpGet("branches/{branchId:guid}/feature-settings")]
+    public async Task<ActionResult<BranchFeatureSettingsDto>> GetBranchFeatureSettings(
+        [FromRoute] Guid branchId, CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return Unauthorized("Invalid tenant context.");
+
+        var settings = await _db.BranchSettings
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.TenantId == tenantId.Value && x.BranchId == branchId, ct);
+
+        return Ok(settings is null ? DefaultFeatureSettings() : MapFeatureSettings(settings));
+    }
+
+    [HttpPost("branches/{branchId:guid}/feature-settings")]
+    public async Task<ActionResult<BranchFeatureSettingsDto>> UpdateBranchFeatureSettings(
+        [FromRoute] Guid branchId,
+        [FromBody] BranchFeatureSettingsDto dto,
+        CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null) return Unauthorized("Invalid tenant context.");
+
+        var settings = await _db.BranchSettings
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(x => x.TenantId == tenantId.Value && x.BranchId == branchId, ct);
+
+        if (settings is null) return NotFound("Branch settings not found.");
+
+        settings.AppointmentsRequireCustomer = dto.AppointmentsRequireCustomer;
+        settings.AppointmentsPreventOverlap = dto.AppointmentsPreventOverlap;
+        settings.AppointmentsAutoNoShow = dto.AppointmentsAutoNoShow;
+        settings.AppointmentsCheckInCreatesInvoice = dto.AppointmentsCheckInCreatesInvoice;
+        settings.AppointmentsAllowNoShow = dto.AppointmentsAllowNoShow;
+        settings.AppointmentsAllowCancel = dto.AppointmentsAllowCancel;
+        settings.ExpensesRequireApproval = dto.ExpensesRequireApproval;
+        settings.ExpensesDeductCash = dto.ExpensesDeductCash;
+        settings.ExpensesNotifyApprovers = dto.ExpensesNotifyApprovers;
+        settings.ExpensesAllowAiAssist = dto.ExpensesAllowAiAssist;
+        settings.PosRequirePaymentReference = dto.PosRequirePaymentReference;
+        settings.PosRequireAppointment = dto.PosRequireAppointment;
+        settings.PosAutoPrintReceipt = dto.PosAutoPrintReceipt;
+        settings.PosAllowMultipleInvoiceTabs = dto.PosAllowMultipleInvoiceTabs;
+        settings.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+        return Ok(MapFeatureSettings(settings));
+    }
+
+    private static BranchFeatureSettingsDto DefaultFeatureSettings() => new()
+    {
+        AppointmentsRequireCustomer = true, AppointmentsPreventOverlap = true,
+        AppointmentsAutoNoShow = true, AppointmentsCheckInCreatesInvoice = true,
+        AppointmentsAllowNoShow = true, AppointmentsAllowCancel = true,
+        ExpensesRequireApproval = true, ExpensesDeductCash = true,
+        ExpensesNotifyApprovers = true, ExpensesAllowAiAssist = false,
+        PosRequirePaymentReference = false, PosRequireAppointment = false,
+        PosAutoPrintReceipt = false, PosAllowMultipleInvoiceTabs = true,
+    };
+
+    private static BranchFeatureSettingsDto MapFeatureSettings(BranchSetting s) => new()
+    {
+        AppointmentsRequireCustomer = s.AppointmentsRequireCustomer,
+        AppointmentsPreventOverlap = s.AppointmentsPreventOverlap,
+        AppointmentsAutoNoShow = s.AppointmentsAutoNoShow,
+        AppointmentsCheckInCreatesInvoice = s.AppointmentsCheckInCreatesInvoice,
+        AppointmentsAllowNoShow = s.AppointmentsAllowNoShow,
+        AppointmentsAllowCancel = s.AppointmentsAllowCancel,
+        ExpensesRequireApproval = s.ExpensesRequireApproval,
+        ExpensesDeductCash = s.ExpensesDeductCash,
+        ExpensesNotifyApprovers = s.ExpensesNotifyApprovers,
+        ExpensesAllowAiAssist = s.ExpensesAllowAiAssist,
+        PosRequirePaymentReference = s.PosRequirePaymentReference,
+        PosRequireAppointment = s.PosRequireAppointment,
+        PosAutoPrintReceipt = s.PosAutoPrintReceipt,
+        PosAllowMultipleInvoiceTabs = s.PosAllowMultipleInvoiceTabs,
+    };
+
     [HttpPost("branches/{branchId:guid}")]
     public async Task<IActionResult> UpdateBranch([FromRoute] Guid branchId, [FromBody] UpdateBranchRequest req, CancellationToken ct)
     {

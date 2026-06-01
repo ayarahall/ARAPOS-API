@@ -237,6 +237,21 @@ public partial class AyaposDbContext : DbContext
             entity.Property(e => e.RequireManagerForPriceOverride).HasDefaultValue(true);
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("now()");
 
+            entity.Property(e => e.AppointmentsRequireCustomer).HasDefaultValue(true);
+            entity.Property(e => e.AppointmentsPreventOverlap).HasDefaultValue(true);
+            entity.Property(e => e.AppointmentsAutoNoShow).HasDefaultValue(true);
+            entity.Property(e => e.AppointmentsCheckInCreatesInvoice).HasDefaultValue(true);
+            entity.Property(e => e.AppointmentsAllowNoShow).HasDefaultValue(true);
+            entity.Property(e => e.AppointmentsAllowCancel).HasDefaultValue(true);
+            entity.Property(e => e.ExpensesRequireApproval).HasDefaultValue(true);
+            entity.Property(e => e.ExpensesDeductCash).HasDefaultValue(true);
+            entity.Property(e => e.ExpensesNotifyApprovers).HasDefaultValue(true);
+            entity.Property(e => e.ExpensesAllowAiAssist).HasDefaultValue(false);
+            entity.Property(e => e.PosRequirePaymentReference).HasDefaultValue(false);
+            entity.Property(e => e.PosRequireAppointment).HasDefaultValue(false);
+            entity.Property(e => e.PosAutoPrintReceipt).HasDefaultValue(false);
+            entity.Property(e => e.PosAllowMultipleInvoiceTabs).HasDefaultValue(true);
+
             entity.HasOne(d => d.Branch).WithOne(p => p.BranchSetting)
                 .HasPrincipalKey<Branch>(p => new { p.TenantId, p.Id })
                 .HasForeignKey<BranchSetting>(d => new { d.TenantId, d.BranchId })
