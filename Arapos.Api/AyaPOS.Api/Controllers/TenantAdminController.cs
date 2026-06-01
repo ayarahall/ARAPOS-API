@@ -1,4 +1,6 @@
 ﻿using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Globalization;
 using System.IO.Compression;
 using Ayapos.Api.Contracts.Platform;
@@ -73,9 +75,12 @@ public sealed class TenantAdminController : ControllerBase
         if (tenantId is null)
             return Unauthorized("Invalid tenant context.");
 
-        await _db.Database.ExecuteSqlRawAsync(
-            "UPDATE [Branches] SET [IsActive] = 1 WHERE [TenantId] = {0} AND [IsActive] IS NULL",
-            tenantId.Value);
+        if (_db.Database.ProviderName?.Contains("SqlServer") == true)
+        {
+            await _db.Database.ExecuteSqlRawAsync(
+                "UPDATE [Branches] SET [IsActive] = 1 WHERE [TenantId] = {0} AND [IsActive] IS NULL",
+                tenantId.Value);
+        }
 
         await EnsureTenantBranchOperationalSetupAsync(tenantId.Value, ct);
 
@@ -273,7 +278,16 @@ public sealed class TenantAdminController : ControllerBase
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(x => x.TenantId == tenantId.Value && x.BranchId == branchId, ct);
 
-        if (settings is null) return NotFound("Branch settings not found.");
+        if (settings is null)
+        {
+            var branch = await _db.Branches
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == branchId && x.TenantId == tenantId.Value, ct);
+            if (branch is null) return NotFound("Branch not found.");
+            settings = CreateDefaultBranchSetting(tenantId.Value, branchId, branch.Name);
+            _db.BranchSettings.Add(settings);
+        }
 
         settings.AppointmentsRequireCustomer = dto.AppointmentsRequireCustomer;
         settings.AppointmentsPreventOverlap = dto.AppointmentsPreventOverlap;
@@ -481,9 +495,19 @@ public sealed class TenantAdminController : ControllerBase
             """,
             user.Id, tenantId.Value, branchId, DateTime.UtcNow);
 
-        await _db.Database.ExecuteSqlRawAsync(
-            "EXEC dbo.sp_SetUserPinV2 @UserId={0}, @TenantId={1}, @Pin={2}",
-            user.Id, tenantId.Value, pin);
+        var pinSalt = RandomNumberGenerator.GetBytes(32);
+        var pinHash = SHA256.HashData(pinSalt.Concat(Encoding.Unicode.GetBytes(pin)).ToArray());
+        _db.UserPins.Add(new UserPin
+        {
+            UserId = user.Id,
+            TenantId = tenantId.Value,
+            PinSalt = pinSalt,
+            PinHash = pinHash,
+            Algo = "SHA2_256",
+            Iterations = 1,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
 
         await transaction.CommitAsync(ct);
 
@@ -1039,21 +1063,14 @@ public sealed class TenantAdminController : ControllerBase
             .AnyAsync(ct);
     }
 
-    private async Task<bool> UsernameExistsInBranchAsync(Guid tenantId, Guid branchId, string username, CancellationToken ct)
+    private Task<bool> UsernameExistsInBranchAsync(Guid tenantId, Guid branchId, string username, CancellationToken ct)
     {
-        var count = await _db.Database.SqlQueryRaw<int>(
-            """
-            SELECT COUNT(1) AS Value
-            FROM dbo.BranchUserAssignments AS assignment
-            INNER JOIN dbo.Users AS u ON u.Id = assignment.UserId
-            WHERE assignment.TenantId = {0}
-              AND assignment.BranchId = {1}
-              AND u.Username = {2}
-            """,
-            tenantId, branchId, username)
-            .SingleAsync(ct);
-
-        return count > 0;
+        return (
+            from assignment in _db.BranchUserAssignments.IgnoreQueryFilters().AsNoTracking()
+            join user in _db.Users.AsNoTracking() on assignment.UserId equals user.Id
+            where assignment.TenantId == tenantId && assignment.BranchId == branchId && user.Username == username
+            select user.Id)
+            .AnyAsync(ct);
     }
 
     private static BranchSetting CreateDefaultBranchSetting(Guid tenantId, Guid branchId, string? branchName = null)
@@ -1078,6 +1095,20 @@ public sealed class TenantAdminController : ControllerBase
             ShowCustomerNameOnReceipt = true,
             ShowPaymentHistoryOnReceipt = true,
             AutoPrintReceiptAfterPayment = false,
+            AppointmentsRequireCustomer = true,
+            AppointmentsPreventOverlap = true,
+            AppointmentsAutoNoShow = true,
+            AppointmentsCheckInCreatesInvoice = true,
+            AppointmentsAllowNoShow = true,
+            AppointmentsAllowCancel = true,
+            ExpensesRequireApproval = true,
+            ExpensesDeductCash = true,
+            ExpensesNotifyApprovers = true,
+            ExpensesAllowAiAssist = false,
+            PosRequirePaymentReference = false,
+            PosRequireAppointment = false,
+            PosAutoPrintReceipt = false,
+            PosAllowMultipleInvoiceTabs = true,
             UpdatedAt = DateTime.UtcNow
         };
 
