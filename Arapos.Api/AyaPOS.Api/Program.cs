@@ -278,4 +278,8 @@ app.MapGet("/api/health", () => Results.Ok(new { ok = true, nowUtc = DateTime.Ut
    .AllowAnonymous();
 
 app.MapControllers();
+
+app.MapGet("/", () => Results.Ok(new { status = "ok", service = "AyaPOS API" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
 app.Run();
