@@ -7,6 +7,7 @@ using Ayapos.Api.Services.Expenses;
 using Ayapos.Api.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models; 
 
@@ -45,8 +46,6 @@ builder.Services.AddDbContext<AyaposDbContext>(opt =>
               ?? builder.Configuration.GetConnectionString("AyaposDb")
               ?? throw new InvalidOperationException("Missing DB connection string.");
 
-    // Convert postgres:// or postgresql:// URI → Npgsql key=value format
-    string cs;
     if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
         raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
     {
@@ -55,15 +54,15 @@ builder.Services.AddDbContext<AyaposDbContext>(opt =>
         var user = Uri.UnescapeDataString(parts[0]);
         var pass = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "";
         var port = uri.Port > 0 ? uri.Port : 5432;
-        var db   = uri.AbsolutePath.TrimStart('/');
-        cs = $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
-    }
-    else
-    {
-        cs = raw;
+        var db = uri.AbsolutePath.TrimStart('/');
+        var cs = $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
+
+        opt.UseNpgsql(cs);
+        return;
     }
 
-    opt.UseNpgsql(cs);
+    opt.UseSqlServer(raw);
+    opt.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
 // Tenant context
@@ -210,7 +209,7 @@ app.UseCors("AllowReact");
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AyaposDbContext>();
-    await db.Database.MigrateAsync();
+    await db.Database.CanConnectAsync();
 
     var ownerBootstrap = scope.ServiceProvider.GetRequiredService<OwnerBootstrapService>();
     await ownerBootstrap.EnsureOwnerAsync();

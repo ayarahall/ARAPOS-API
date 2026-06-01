@@ -720,6 +720,144 @@ public sealed class TenantAdminController : ControllerBase
         });
     }
 
+    [HttpPost("branches/{branchId:guid}/products/import")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<ActionResult<ServiceImportResultDto>> ImportBranchProducts(
+        [FromRoute] Guid branchId,
+        [FromForm] BranchServiceImportForm request,
+        CancellationToken ct)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId is null)
+            return Unauthorized("Invalid tenant context.");
+
+        var branch = await _db.Branches
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == branchId && x.TenantId == tenantId.Value && x.IsActive, ct);
+
+        if (branch is null)
+            return NotFound("Branch not found.");
+
+        var file = request.File;
+        if (file is null || file.Length == 0)
+            return BadRequest("Excel file is required.");
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(extension, ".csv", StringComparison.OrdinalIgnoreCase))
+            return BadRequest("Only .xlsx and .csv files are supported.");
+
+        List<ProductImportRowDto> rows;
+        await using (var stream = file.OpenReadStream())
+        {
+            rows = string.Equals(extension, ".csv", StringComparison.OrdinalIgnoreCase)
+                ? ReadProductImportRowsFromCsv(stream)
+                : ReadProductImportRows(stream);
+        }
+
+        if (rows.Count == 0)
+            return BadRequest("No importable rows were found in the file.");
+
+        var existingProducts = await _db.Products
+            .Where(x => x.TenantId == tenantId.Value && x.BranchId == branchId)
+            .ToListAsync(ct);
+
+        var productByKey = existingProducts.ToDictionary(CreateProductLookupKey, StringComparer.OrdinalIgnoreCase);
+        var productBySku = existingProducts
+            .Where(x => !string.IsNullOrWhiteSpace(x.Sku))
+            .ToDictionary(x => x.Sku!.Trim().ToUpperInvariant(), StringComparer.OrdinalIgnoreCase);
+
+        var result = new ServiceImportResultDto { TotalRows = rows.Count };
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.NameAr) && string.IsNullOrWhiteSpace(row.NameEn))
+            {
+                result.Issues.Add(new ServiceImportIssueDto
+                {
+                    RowNumber = row.RowNumber,
+                    Message = "Arabic or English product name is required."
+                });
+                continue;
+            }
+
+            if (row.Price is null || row.Price < 0)
+            {
+                result.Issues.Add(new ServiceImportIssueDto
+                {
+                    RowNumber = row.RowNumber,
+                    Message = "Price must be a non-negative numeric value."
+                });
+                continue;
+            }
+
+            var skuKey = (row.Sku ?? string.Empty).Trim().ToUpperInvariant();
+            var nameKey = CreateProductLookupKey(row.NameAr, row.NameEn);
+
+            Product? product = null;
+            if (skuKey.Length > 0 && productBySku.TryGetValue(skuKey, out product))
+            {
+                // matched by SKU
+            }
+            else if (productByKey.TryGetValue(nameKey, out product))
+            {
+                // matched by name
+            }
+
+            if (product is not null)
+            {
+                product.NameAr = NormalizeOptionalText(row.NameAr, 120);
+                product.NameEn = NormalizeOptionalText(row.NameEn, 120);
+                if (!string.IsNullOrWhiteSpace(row.Sku)) product.Sku = NormalizeOptionalText(row.Sku, 100);
+                if (!string.IsNullOrWhiteSpace(row.Barcode)) product.Barcode = NormalizeOptionalText(row.Barcode, 100);
+                if (!string.IsNullOrWhiteSpace(row.Unit)) product.Unit = row.Unit.Trim()[..Math.Min(row.Unit.Trim().Length, 50)];
+                product.SellPrice = row.Price.Value;
+                if (row.CostPrice.HasValue && row.CostPrice.Value >= 0) product.CostPrice = row.CostPrice.Value;
+                product.CurrencyCode = NormalizeCurrencyCode(row.CurrencyCode, branch.CurrencyCode);
+                product.IsActive = true;
+                result.UpdatedCount++;
+            }
+            else
+            {
+                product = new Product
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId.Value,
+                    BranchId = branchId,
+                    NameAr = NormalizeOptionalText(row.NameAr, 120),
+                    NameEn = NormalizeOptionalText(row.NameEn, 120),
+                    Sku = NormalizeOptionalText(row.Sku, 100),
+                    Barcode = NormalizeOptionalText(row.Barcode, 100),
+                    Unit = NormalizeOptionalText(row.Unit, 50) ?? string.Empty,
+                    SellPrice = row.Price.Value,
+                    CostPrice = row.CostPrice ?? 0m,
+                    CurrencyCode = NormalizeCurrencyCode(row.CurrencyCode, branch.CurrencyCode),
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _db.Products.Add(product);
+
+                if (skuKey.Length > 0) productBySku[skuKey] = product;
+                productByKey[nameKey] = product;
+                result.CreatedCount++;
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new ServiceImportResultDto
+        {
+            TotalRows = result.TotalRows,
+            CreatedCount = result.CreatedCount,
+            UpdatedCount = result.UpdatedCount,
+            SkippedCount = result.Issues.Count,
+            Issues = result.Issues
+        });
+    }
+
     private Guid? GetTenantId()
     {
         var tenantIdClaim = User.FindFirstValue("tenantId");
@@ -1196,5 +1334,177 @@ public sealed class TenantAdminController : ControllerBase
             return null;
 
         return normalized[..Math.Min(normalized.Length, maxLength)];
+    }
+
+    private static string CreateProductLookupKey(Product product)
+        => CreateProductLookupKey(product.NameAr, product.NameEn);
+
+    private static string CreateProductLookupKey(string? nameAr, string? nameEn)
+        => $"{(nameAr ?? string.Empty).Trim().ToUpperInvariant()}|{(nameEn ?? string.Empty).Trim().ToUpperInvariant()}";
+
+    private static Dictionary<string, int> BuildProductHeaderMap(Dictionary<int, string> headerRow)
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in headerRow)
+        {
+            var normalized = NormalizeProductHeader(item.Value);
+            if (normalized.Length == 0)
+                continue;
+
+            map.TryAdd(normalized, item.Key);
+        }
+
+        return map;
+    }
+
+    private static string NormalizeProductHeader(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "arabic" or "arabic name" or "name ar" or "namear" => "arabic",
+            "english" or "english name" or "name en" or "nameen" => "english",
+            "price" or "sell price" or "sellprice" => "price",
+            "sku" => "sku",
+            "barcode" => "barcode",
+            "unit" => "unit",
+            "cost" or "cost price" or "costprice" => "cost",
+            "currency" or "currency code" or "currencycode" => "currency",
+            _ => string.Empty
+        };
+    }
+
+    private static List<ProductImportRowDto> ReadProductImportRows(Stream stream)
+    {
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+        var sharedStrings = ReadSharedStrings(archive);
+        var sheetEntry = archive.GetEntry("xl/worksheets/sheet1.xml")
+            ?? throw new InvalidOperationException("The Excel file must contain data in the first worksheet.");
+
+        using var sheetStream = sheetEntry.Open();
+        var document = System.Xml.Linq.XDocument.Load(sheetStream);
+        System.Xml.Linq.XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
+        var rows = document.Descendants(ns + "row")
+            .Select(row => row.Elements(ns + "c")
+                .ToDictionary(
+                    cell => GetColumnIndex((string?)cell.Attribute("r")),
+                    cell => GetCellValue(cell, sharedStrings),
+                    EqualityComparer<int>.Default))
+            .Where(row => row.Count > 0)
+            .ToList();
+
+        if (rows.Count == 0)
+            return [];
+
+        var headerMap = BuildProductHeaderMap(rows[0]);
+        if (!headerMap.TryGetValue("arabic", out var arabicIndex) ||
+            !headerMap.TryGetValue("english", out var englishIndex) ||
+            !headerMap.TryGetValue("price", out var priceIndex))
+        {
+            throw new InvalidOperationException("Excel headers must include Arabic, English, and Price columns.");
+        }
+
+        var hasSku = headerMap.TryGetValue("sku", out var skuIndex);
+        var hasBarcode = headerMap.TryGetValue("barcode", out var barcodeIndex);
+        var hasUnit = headerMap.TryGetValue("unit", out var unitIndex);
+        var hasCost = headerMap.TryGetValue("cost", out var costIndex);
+        var hasCurrency = headerMap.TryGetValue("currency", out var currencyIndex);
+
+        var result = new List<ProductImportRowDto>();
+        for (var i = 1; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var nameAr = GetRowValue(row, arabicIndex);
+            var nameEn = GetRowValue(row, englishIndex);
+            var priceText = GetRowValue(row, priceIndex);
+
+            if (string.IsNullOrWhiteSpace(nameAr) && string.IsNullOrWhiteSpace(nameEn) && string.IsNullOrWhiteSpace(priceText))
+                continue;
+
+            result.Add(new ProductImportRowDto
+            {
+                RowNumber = i + 1,
+                NameAr = NormalizeOptionalText(nameAr, 120),
+                NameEn = NormalizeOptionalText(nameEn, 120),
+                Price = TryParseDecimal(priceText),
+                Sku = hasSku ? NormalizeOptionalText(GetRowValue(row, skuIndex), 100) : null,
+                Barcode = hasBarcode ? NormalizeOptionalText(GetRowValue(row, barcodeIndex), 100) : null,
+                Unit = hasUnit ? NormalizeOptionalText(GetRowValue(row, unitIndex), 50) : null,
+                CostPrice = hasCost ? TryParseDecimal(GetRowValue(row, costIndex)) : null,
+                CurrencyCode = hasCurrency ? (GetRowValue(row, currencyIndex) ?? "AED") : "AED"
+            });
+        }
+
+        return result;
+    }
+
+    private static List<ProductImportRowDto> ReadProductImportRowsFromCsv(Stream stream)
+    {
+        using var reader = new StreamReader(stream);
+        var lines = new List<string>();
+        while (!reader.EndOfStream)
+        {
+            var line = reader.ReadLine();
+            if (line is not null)
+                lines.Add(line);
+        }
+
+        if (lines.Count == 0)
+            return [];
+
+        var headerCells = ParseCsvLine(lines[0]);
+        var headerRow = new Dictionary<int, string>();
+        for (var i = 0; i < headerCells.Count; i++)
+            headerRow[i + 1] = headerCells[i];
+
+        var headerMap = BuildProductHeaderMap(headerRow);
+        if (!headerMap.TryGetValue("arabic", out var arabicIndex) ||
+            !headerMap.TryGetValue("english", out var englishIndex) ||
+            !headerMap.TryGetValue("price", out var priceIndex))
+        {
+            throw new InvalidOperationException("CSV headers must include Arabic, English, and Price columns.");
+        }
+
+        var hasSku = headerMap.TryGetValue("sku", out var skuIndex);
+        var hasBarcode = headerMap.TryGetValue("barcode", out var barcodeIndex);
+        var hasUnit = headerMap.TryGetValue("unit", out var unitIndex);
+        var hasCost = headerMap.TryGetValue("cost", out var costIndex);
+        var hasCurrency = headerMap.TryGetValue("currency", out var currencyIndex);
+
+        var result = new List<ProductImportRowDto>();
+        for (var rowIndex = 1; rowIndex < lines.Count; rowIndex++)
+        {
+            var cells = ParseCsvLine(lines[rowIndex]);
+            if (cells.All(string.IsNullOrWhiteSpace))
+                continue;
+
+            string? GetCell(int oneBasedIndex)
+                => oneBasedIndex >= 1 && oneBasedIndex <= cells.Count
+                    ? cells[oneBasedIndex - 1]?.Trim()
+                    : null;
+
+            var nameAr = GetCell(arabicIndex);
+            var nameEn = GetCell(englishIndex);
+            var priceText = GetCell(priceIndex);
+
+            if (string.IsNullOrWhiteSpace(nameAr) && string.IsNullOrWhiteSpace(nameEn) && string.IsNullOrWhiteSpace(priceText))
+                continue;
+
+            result.Add(new ProductImportRowDto
+            {
+                RowNumber = rowIndex + 1,
+                NameAr = NormalizeOptionalText(nameAr, 120),
+                NameEn = NormalizeOptionalText(nameEn, 120),
+                Price = TryParseDecimal(priceText),
+                Sku = hasSku ? NormalizeOptionalText(GetCell(skuIndex), 100) : null,
+                Barcode = hasBarcode ? NormalizeOptionalText(GetCell(barcodeIndex), 100) : null,
+                Unit = hasUnit ? NormalizeOptionalText(GetCell(unitIndex), 50) : null,
+                CostPrice = hasCost ? TryParseDecimal(GetCell(costIndex)) : null,
+                CurrencyCode = hasCurrency ? (GetCell(currencyIndex) ?? "AED") : "AED"
+            });
+        }
+
+        return result;
     }
 }
