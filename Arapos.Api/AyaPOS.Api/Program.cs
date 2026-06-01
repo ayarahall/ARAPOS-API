@@ -11,6 +11,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models; 
 
+// Npgsql: treat DateTime.Kind=Unspecified as UTC (avoids "cannot write Unspecified to timestamptz" errors)
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
