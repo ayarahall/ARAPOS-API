@@ -7,6 +7,15 @@ if (args.Contains("--verify"))          { await Verify.RunAsync();          retu
 if (args.Contains("--activate-tenants")){ await ActivateTenants.RunAsync(); return; }
 if (args.Contains("--check-tenants"))   { await CheckTenants.RunAsync();   return; }
 if (args.Contains("--fix-licenses"))    { await FixLicenses.RunAsync();    return; }
+if (args.Contains("--reset-password"))
+{
+    var userIdx  = Array.IndexOf(args, "--reset-password") + 1;
+    var passIdx  = Array.IndexOf(args, "--new-password") + 1;
+    var username = userIdx > 0 && userIdx < args.Length ? args[userIdx] : throw new Exception("--reset-password requires a username");
+    var password = passIdx > 0 && passIdx < args.Length ? args[passIdx] : throw new Exception("--new-password is required");
+    await ResetPassword.RunAsync(username, password);
+    return;
+}
 
 const string SQL_CONN =
     "Server=DESKTOP-QKHC9EC\\AYAPOS;Database=AYAPOS;" +
