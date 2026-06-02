@@ -226,6 +226,17 @@ using (var scope = app.Services.CreateScope())
         // Do not crash — individual requests will fail with a clear error
     }
 
+    // Apply any pending EF Core migrations automatically on startup
+    try
+    {
+        await db.Database.MigrateAsync();
+        logger.LogInformation("EF Core migrations applied.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "EF Core migration failed — schema may be out of date.");
+    }
+
     var isPostgres = db.Database.ProviderName?.Contains("Npgsql") == true;
     if (isPostgres)
     {
