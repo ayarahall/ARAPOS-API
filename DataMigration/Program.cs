@@ -2,6 +2,8 @@ using System.Data;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 
+if (args.Contains("--apply-triggers"))  { await ApplyTriggers.RunAsync();   return; }
+if (args.Contains("--test-insert"))     { await TestInsert.RunAsync();      return; }
 if (args.Contains("--patch"))           { await Patch.RunAsync();           return; }
 if (args.Contains("--verify"))          { await Verify.RunAsync();          return; }
 if (args.Contains("--activate-tenants")){ await ActivateTenants.RunAsync(); return; }

@@ -246,7 +246,10 @@ using (var scope = app.Services.CreateScope())
         await db.Database.ExecuteSqlRawAsync("""
             CREATE OR REPLACE FUNCTION update_rowversion() RETURNS trigger AS $$
             BEGIN
-                NEW."RowVersion" := gen_random_bytes(8);
+                NEW."RowVersion" := substring(
+                    sha256(CAST(clock_timestamp() AS text)::bytea || CAST(random() AS text)::bytea)
+                    FROM 1 FOR 8
+                );
                 RETURN NEW;
             END;
             $$ LANGUAGE plpgsql;
