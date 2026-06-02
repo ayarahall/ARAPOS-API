@@ -243,7 +243,7 @@ public class CashierController : ControllerBase
                 !x.IsClosed, ct);
 
         if (alreadyOpen)
-            return BadRequest("There is already an open cashier session for this branch.");
+            return BadRequest("يوجد جلسة كاشير مفتوحة بالفعل");
 
         var session = new CashierSession
         {

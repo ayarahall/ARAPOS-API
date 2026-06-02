@@ -241,6 +241,32 @@ using (var scope = app.Services.CreateScope())
     var isPostgres = db.Database.ProviderName?.Contains("Npgsql") == true;
     if (isPostgres)
     {
+        // RowVersion triggers — EF migration scaffolded bytea NOT NULL but no trigger/default.
+        // gen_random_bytes(8) produces a unique value on every INSERT/UPDATE.
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE OR REPLACE FUNCTION update_rowversion() RETURNS trigger AS $$
+            BEGIN
+                NEW."RowVersion" := gen_random_bytes(8);
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            DO $do$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'cashiersessions_rowversion_trg') THEN
+                    CREATE TRIGGER cashiersessions_rowversion_trg
+                    BEFORE INSERT OR UPDATE ON "CashierSessions"
+                    FOR EACH ROW EXECUTE FUNCTION update_rowversion();
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'refunds_rowversion_trg') THEN
+                    CREATE TRIGGER refunds_rowversion_trg
+                    BEFORE INSERT OR UPDATE ON "Refunds"
+                    FOR EACH ROW EXECUTE FUNCTION update_rowversion();
+                END IF;
+            END;
+            $do$;
+            """);
+
         await db.Database.ExecuteSqlRawAsync("""
             ALTER TABLE "BranchSettings"
                 ADD COLUMN IF NOT EXISTS "AppointmentsRequireCustomer" boolean NOT NULL DEFAULT true,
