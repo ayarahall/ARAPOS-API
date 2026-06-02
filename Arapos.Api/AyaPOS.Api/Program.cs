@@ -63,6 +63,7 @@ builder.Services.AddDbContext<AyaposDbContext>(opt =>
         var cs = $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
 
         opt.UseNpgsql(cs);
+        opt.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
         return;
     }
 
