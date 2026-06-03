@@ -88,13 +88,13 @@ public sealed class InvoicesController : ControllerBase
 
         if (dateFrom.HasValue)
         {
-            var from = dateFrom.Value.Date;
+            var from = DateTime.SpecifyKind(dateFrom.Value.Date, DateTimeKind.Utc);
             query = query.Where(x => x.CreatedAt >= from);
         }
 
         if (dateTo.HasValue)
         {
-            var toExclusive = dateTo.Value.Date.AddDays(1);
+            var toExclusive = DateTime.SpecifyKind(dateTo.Value.Date.AddDays(1), DateTimeKind.Utc);
             query = query.Where(x => x.CreatedAt < toExclusive);
         }
 
