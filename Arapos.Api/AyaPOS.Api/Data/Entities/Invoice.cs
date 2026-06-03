@@ -17,6 +17,8 @@ public partial class Invoice
 
     public Guid? CustomerId { get; set; }
 
+    public Guid? AppointmentId { get; set; }
+
     public string Status { get; set; } = null!;
 
     public int SubtotalCents { get; set; }

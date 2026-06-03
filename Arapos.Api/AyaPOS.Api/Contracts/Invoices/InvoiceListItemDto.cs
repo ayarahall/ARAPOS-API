@@ -10,4 +10,5 @@ public sealed class InvoiceListItemDto
     public decimal TotalPaid { get; init; }
     public decimal Remaining { get; init; }
     public DateTime CreatedAt { get; init; }
+    public Guid? AppointmentId { get; init; }
 }

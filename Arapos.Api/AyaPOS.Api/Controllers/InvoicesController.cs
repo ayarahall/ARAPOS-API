@@ -80,7 +80,8 @@ public sealed class InvoicesController : ControllerBase
                             .AsNoTracking()
                             .Where(p => p.TenantId == tenantId && p.InvoiceId == i.Id)
                             .Sum(p => (int?)p.AmountCents) ?? 0)) / 100m,
-                CreatedAt = i.CreatedAt
+                CreatedAt = i.CreatedAt,
+                AppointmentId = EF.Property<Guid?>(i, nameof(Invoice.AppointmentId))
             });
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -675,7 +676,11 @@ public sealed class InvoicesController : ControllerBase
                     x.CustomerId == invoice.CustomerId, ct);
 
             if (appointment is not null && appointment.Status is not "cancelled" and not "no_show")
+            {
                 appointment.Status = invoice.Status == "Paid" ? "completed" : "checked_in";
+                // Persist the appointment link on the invoice for reporting
+                invoice.AppointmentId = appointment.Id;
+            }
         }
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

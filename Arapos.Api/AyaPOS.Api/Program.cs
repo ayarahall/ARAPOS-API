@@ -287,6 +287,12 @@ using (var scope = app.Services.CreateScope())
                 ADD COLUMN IF NOT EXISTS "PosAutoPrintReceipt" boolean NOT NULL DEFAULT false,
                 ADD COLUMN IF NOT EXISTS "PosAllowMultipleInvoiceTabs" boolean NOT NULL DEFAULT true;
             """);
+
+        // Link invoices to appointments for employee revenue reporting
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "Invoices"
+                ADD COLUMN IF NOT EXISTS "AppointmentId" uuid NULL;
+            """);
     }
     else
     {
