@@ -50,41 +50,7 @@ public sealed class InvoicesController : ControllerBase
 
         var query = _db.Invoices
             .AsNoTracking()
-            .Where(i => i.TenantId == tenantId && i.BranchId == branchId)
-            .Select(i => new
-            {
-                i.Id,
-                InvoiceCode = EF.Property<string?>(i, nameof(Invoice.InvoiceCode)) ?? string.Empty,
-                Status = EF.Property<string?>(i, nameof(Invoice.Status)) ?? "DRAFT",
-                CustomerId = EF.Property<Guid?>(i, nameof(Invoice.CustomerId)),
-                TotalCents = EF.Property<int?>(i, nameof(Invoice.TotalCents)) ?? 0,
-                CreatedAt = EF.Property<DateTime?>(i, nameof(Invoice.CreatedAt)) ?? DateTime.UtcNow
-            })
-            .Select(i => new InvoiceListItemDto
-            {
-                Id = i.Id,
-                InvoiceCode = i.InvoiceCode,
-                Status = i.Status,
-                CustomerName = i.CustomerId == null
-                    ? string.Empty
-                    : _db.Customers
-                        .AsNoTracking()
-                        .Where(c => c.Id == i.CustomerId.Value)
-                        .Select(c => EF.Property<string?>(c, nameof(Customer.FullName)) ?? string.Empty)
-                        .FirstOrDefault() ?? string.Empty,
-                Total = i.TotalCents / 100m,
-                TotalPaid = (_db.Payments
-                        .AsNoTracking()
-                        .Where(p => p.TenantId == tenantId && p.InvoiceId == i.Id)
-                        .Sum(p => (int?)p.AmountCents) ?? 0) / 100m,
-                Remaining = (i.TotalCents - (
-                        _db.Payments
-                            .AsNoTracking()
-                            .Where(p => p.TenantId == tenantId && p.InvoiceId == i.Id)
-                            .Sum(p => (int?)p.AmountCents) ?? 0)) / 100m,
-                CreatedAt = i.CreatedAt,
-                AppointmentId = EF.Property<Guid?>(i, nameof(Invoice.AppointmentId))
-            });
+            .Where(i => i.TenantId == tenantId && i.BranchId == branchId);
 
         if (dateFrom.HasValue)
         {
@@ -107,18 +73,69 @@ public sealed class InvoicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(q))
         {
             var term = q.Trim();
+            var matchingCustomerIds = await _db.Customers
+                .AsNoTracking()
+                .Where(c => c.TenantId == tenantId && EF.Functions.Like(c.FullName ?? string.Empty, $"%{term}%"))
+                .Select(c => c.Id)
+                .ToListAsync(ct);
+
             query = query.Where(x =>
-                EF.Functions.Like(x.InvoiceCode, $"%{term}%") ||
-                EF.Functions.Like(x.CustomerName ?? string.Empty, $"%{term}%"));
+                EF.Functions.Like(x.InvoiceCode ?? string.Empty, $"%{term}%") ||
+                (x.CustomerId.HasValue && matchingCustomerIds.Contains(x.CustomerId.Value)));
         }
 
         var total = await query.CountAsync(ct);
 
-        var items = await query
+        var pageItems = await query
             .OrderByDescending(x => x.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
+            .Select(x => new
+            {
+                x.Id,
+                x.InvoiceCode,
+                x.Status,
+                x.CustomerId,
+                x.TotalCents,
+                x.CreatedAt,
+                x.AppointmentId
+            })
             .ToListAsync(ct);
+
+        var invoiceIds = pageItems.Select(x => x.Id).ToList();
+        var customerIds = pageItems.Where(x => x.CustomerId.HasValue).Select(x => x.CustomerId!.Value).Distinct().ToList();
+
+        var customerNames = await _db.Customers
+            .AsNoTracking()
+            .Where(c => customerIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.FullName })
+            .ToDictionaryAsync(c => c.Id, c => c.FullName ?? string.Empty, ct);
+
+        var paidByInvoice = await _db.Payments
+            .AsNoTracking()
+            .Where(p => p.TenantId == tenantId && invoiceIds.Contains(p.InvoiceId))
+            .GroupBy(p => p.InvoiceId)
+            .Select(g => new { InvoiceId = g.Key, TotalPaidCents = g.Sum(p => p.AmountCents) })
+            .ToDictionaryAsync(x => x.InvoiceId, x => x.TotalPaidCents, ct);
+
+        var items = pageItems.Select(i =>
+        {
+            var totalPaidCents = paidByInvoice.TryGetValue(i.Id, out var paid) ? paid : 0;
+            return new InvoiceListItemDto
+            {
+                Id = i.Id,
+                InvoiceCode = i.InvoiceCode ?? string.Empty,
+                Status = i.Status ?? "Draft",
+                CustomerName = i.CustomerId.HasValue && customerNames.TryGetValue(i.CustomerId.Value, out var customerName)
+                    ? customerName
+                    : string.Empty,
+                Total = i.TotalCents / 100m,
+                TotalPaid = totalPaidCents / 100m,
+                Remaining = (i.TotalCents - totalPaidCents) / 100m,
+                CreatedAt = i.CreatedAt,
+                AppointmentId = i.AppointmentId
+            };
+        }).ToList();
 
         return Ok(new PagedResult<InvoiceListItemDto>
         {
@@ -128,7 +145,6 @@ public sealed class InvoicesController : ControllerBase
             PageSize = pageSize
         });
     }
-
     // =========================================================
     // 1️⃣ Get Invoice
     // =========================================================
