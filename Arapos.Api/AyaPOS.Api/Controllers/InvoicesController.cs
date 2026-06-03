@@ -32,6 +32,8 @@ public sealed class InvoicesController : ControllerBase
     public async Task<ActionResult<PagedResult<InvoiceListItemDto>>> List(
         [FromQuery] string? status,
         [FromQuery] string? q,
+        [FromQuery] DateTime? dateFrom,
+        [FromQuery] DateTime? dateTo,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
@@ -83,6 +85,18 @@ public sealed class InvoicesController : ControllerBase
                 CreatedAt = i.CreatedAt,
                 AppointmentId = EF.Property<Guid?>(i, nameof(Invoice.AppointmentId))
             });
+
+        if (dateFrom.HasValue)
+        {
+            var from = dateFrom.Value.Date;
+            query = query.Where(x => x.CreatedAt >= from);
+        }
+
+        if (dateTo.HasValue)
+        {
+            var toExclusive = dateTo.Value.Date.AddDays(1);
+            query = query.Where(x => x.CreatedAt < toExclusive);
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
