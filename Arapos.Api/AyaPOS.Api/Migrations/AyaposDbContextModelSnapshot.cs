@@ -527,6 +527,15 @@ namespace Ayapos.Api.Migrations
                         .HasColumnType("character varying(40)")
                         .HasDefaultValue("OTHER");
 
+                    b.Property<string>("ExtractedFieldsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ExtractedText")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReviewedFieldsJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("FailureReason")
                         .HasMaxLength(400)
                         .HasColumnType("character varying(400)");

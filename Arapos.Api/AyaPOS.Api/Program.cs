@@ -3,6 +3,7 @@ using System.Text;
 using Ayapos.Api.Data;
 using Ayapos.Api.Options;
 using Ayapos.Api.Security;
+using Ayapos.Api.Services.Documents;
 using Ayapos.Api.Services.Expenses;
 using Ayapos.Api.Tenancy;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -83,6 +84,11 @@ builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<PasswordHasherService>();
 builder.Services.AddScoped<OwnerBootstrapService>();
 builder.Services.AddHttpClient<IExpenseReceiptAnalyzer, OpenAiExpenseReceiptAnalyzer>();
+
+// Documents feature — OCR (Tesseract CLI) + rule-based field extraction + background worker
+builder.Services.AddSingleton<IOcrService, TesseractCliOcrService>();
+builder.Services.AddSingleton<IStructuredFieldExtractor, RuleBasedFieldExtractor>();
+builder.Services.AddHostedService<DocumentProcessingWorker>();
 
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()
           ?? throw new InvalidOperationException("Missing Jwt config.");

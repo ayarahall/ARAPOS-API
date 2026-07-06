@@ -10,6 +10,9 @@ public sealed class DocumentUploadListItemDto
     public string LanguageHint { get; init; } = "auto";
     public string Status { get; init; } = "PENDING";
     public string? FailureReason { get; init; }
+    public string? ExtractedText { get; init; }
+    public string? ExtractedFieldsJson { get; init; }
+    public string? ReviewedFieldsJson { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
 }

@@ -24,7 +24,7 @@ public sealed class DocumentsController : ControllerBase
     private const long MaxFileSizeBytes = 15_000_000; // 15 MB
 
     private static readonly string[] AllowedDocumentTypes =
-        ["SCANNED_FORM", "CERTIFICATE", "CONSENT_FORM", "REPORT", "OTHER"];
+        ["SCANNED_FORM", "CERTIFICATE", "CONSENT_FORM", "REPORT", "SERVICE_RECEIPT", "OTHER"];
 
     private static readonly string[] AllowedLanguageHints = ["ar", "en", "auto"];
 
@@ -106,6 +106,9 @@ public sealed class DocumentsController : ControllerBase
                 LanguageHint = x.LanguageHint,
                 Status = x.Status,
                 FailureReason = x.FailureReason,
+                ExtractedText = x.ExtractedText,
+                ExtractedFieldsJson = x.ExtractedFieldsJson,
+                ReviewedFieldsJson = x.ReviewedFieldsJson,
                 CreatedAt = x.CreatedAt,
                 UpdatedAt = x.UpdatedAt
             })
@@ -139,6 +142,9 @@ public sealed class DocumentsController : ControllerBase
                 LanguageHint = x.LanguageHint,
                 Status = x.Status,
                 FailureReason = x.FailureReason,
+                ExtractedText = x.ExtractedText,
+                ExtractedFieldsJson = x.ExtractedFieldsJson,
+                ReviewedFieldsJson = x.ReviewedFieldsJson,
                 CreatedAt = x.CreatedAt,
                 UpdatedAt = x.UpdatedAt
             })
@@ -283,6 +289,108 @@ public sealed class DocumentsController : ControllerBase
         return Ok(logs);
     }
 
+    [HttpPut("{id:guid}/review")]
+    public async Task<ActionResult<DocumentUploadListItemDto>> Review(
+        [FromRoute] Guid id,
+        [FromBody] ReviewDocumentRequest request,
+        CancellationToken ct = default)
+    {
+        if (_tenant.TenantId is null || _tenant.BranchId is null)
+            return Unauthorized("Missing tenant or branch.");
+
+        var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+
+        if (doc is null)
+            return NotFound("Document not found.");
+
+        var reviewedJson = JsonSerializer.Serialize(request.Fields);
+        doc.ReviewedFieldsJson = reviewedJson;
+        doc.Status = "REVIEWED";
+        doc.UpdatedAt = DateTime.UtcNow;
+
+        _db.DocumentAuditLogs.Add(new DocumentAuditLog
+        {
+            Id = Guid.NewGuid(),
+            DocumentUploadId = doc.Id,
+            Action = "REVIEWED",
+            ActorUserId = CurrentUserId,
+            DetailsJson = reviewedJson,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(ToListItemDto(doc));
+    }
+
+    [HttpPost("{id:guid}/approve")]
+    public async Task<ActionResult<DocumentUploadListItemDto>> Approve([FromRoute] Guid id, CancellationToken ct = default)
+    {
+        if (_tenant.TenantId is null || _tenant.BranchId is null)
+            return Unauthorized("Missing tenant or branch.");
+
+        var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+
+        if (doc is null)
+            return NotFound("Document not found.");
+
+        // Never approve straight from OCR/AI output — a human review pass must have happened first.
+        if (string.IsNullOrWhiteSpace(doc.ReviewedFieldsJson))
+            return BadRequest("Review the extracted fields before approving.");
+
+        doc.Status = "APPROVED";
+        doc.UpdatedAt = DateTime.UtcNow;
+
+        _db.DocumentAuditLogs.Add(new DocumentAuditLog
+        {
+            Id = Guid.NewGuid(),
+            DocumentUploadId = doc.Id,
+            Action = "APPROVED",
+            ActorUserId = CurrentUserId,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(ToListItemDto(doc));
+    }
+
+    [HttpPost("{id:guid}/retry")]
+    public async Task<ActionResult<DocumentUploadListItemDto>> Retry([FromRoute] Guid id, CancellationToken ct = default)
+    {
+        if (_tenant.TenantId is null || _tenant.BranchId is null)
+            return Unauthorized("Missing tenant or branch.");
+
+        var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+
+        if (doc is null)
+            return NotFound("Document not found.");
+
+        if (doc.Status != "FAILED")
+            return BadRequest("Only failed documents can be retried.");
+
+        doc.Status = "PENDING";
+        doc.FailureReason = null;
+        doc.UpdatedAt = DateTime.UtcNow;
+
+        _db.DocumentAuditLogs.Add(new DocumentAuditLog
+        {
+            Id = Guid.NewGuid(),
+            DocumentUploadId = doc.Id,
+            Action = "UPLOADED",
+            ActorUserId = CurrentUserId,
+            DetailsJson = "{\"retry\":true}",
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(ToListItemDto(doc));
+    }
+
     private static DocumentUploadListItemDto ToListItemDto(DocumentUpload x) => new()
     {
         Id = x.Id,
@@ -293,6 +401,9 @@ public sealed class DocumentsController : ControllerBase
         LanguageHint = x.LanguageHint,
         Status = x.Status,
         FailureReason = x.FailureReason,
+        ExtractedText = x.ExtractedText,
+        ExtractedFieldsJson = x.ExtractedFieldsJson,
+        ReviewedFieldsJson = x.ReviewedFieldsJson,
         CreatedAt = x.CreatedAt,
         UpdatedAt = x.UpdatedAt
     };

@@ -10,7 +10,7 @@ public partial class DocumentUpload
 
     public Guid? UploadedByUserId { get; set; }
 
-    // SCANNED_FORM | CERTIFICATE | CONSENT_FORM | REPORT | OTHER
+    // SCANNED_FORM | CERTIFICATE | CONSENT_FORM | REPORT | SERVICE_RECEIPT | OTHER
     public string DocumentType { get; set; } = "OTHER";
 
     public string OriginalFileName { get; set; } = null!;
@@ -31,6 +31,16 @@ public partial class DocumentUpload
     public string Status { get; set; } = "PENDING";
 
     public string? FailureReason { get; set; }
+
+    // Raw OCR output — immutable evidence of what the engine actually read.
+    public string? ExtractedText { get; set; }
+
+    // Rule-based field guesses straight out of OCR, e.g.
+    // {"customerName":"...","service":"...","price":"...","customerPhone":"...","changeAmount":"..."}
+    public string? ExtractedFieldsJson { get; set; }
+
+    // What the user actually confirmed after review — never written automatically.
+    public string? ReviewedFieldsJson { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
