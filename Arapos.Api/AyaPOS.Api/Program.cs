@@ -32,7 +32,9 @@ builder.Services.AddCors(options =>
                           return host == "localhost"
                               || host == "127.0.0.1"
                               || host.EndsWith(".vercel.app")
-                              || host.EndsWith(".onrender.com");
+                              || host.EndsWith(".onrender.com")
+                              || host == "ayaspos.com"
+                              || host.EndsWith(".ayaspos.com");
                       })
                   .AllowAnyHeader()
                   .AllowAnyMethod();
