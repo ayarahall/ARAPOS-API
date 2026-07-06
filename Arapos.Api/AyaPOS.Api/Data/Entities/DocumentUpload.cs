@@ -45,4 +45,11 @@ public partial class DocumentUpload
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
+
+    // Soft delete only — the row (and its audit trail) is never physically removed,
+    // it's just hidden from the default list/get so nothing in the audit log ever
+    // dangles on a missing document.
+    public DateTime? DeletedAt { get; set; }
+
+    public Guid? DeletedByUserId { get; set; }
 }

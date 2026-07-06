@@ -71,7 +71,7 @@ public sealed class DocumentsController : ControllerBase
 
         var query = _db.DocumentUploads
             .AsNoTracking()
-            .Where(x => x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value);
+            .Where(x => x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null);
 
         if (!string.IsNullOrWhiteSpace(documentType))
         {
@@ -131,7 +131,7 @@ public sealed class DocumentsController : ControllerBase
 
         var doc = await _db.DocumentUploads
             .AsNoTracking()
-            .Where(x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value)
+            .Where(x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null)
             .Select(x => new DocumentUploadListItemDto
             {
                 Id = x.Id,
@@ -243,7 +243,7 @@ public sealed class DocumentsController : ControllerBase
             return Unauthorized("Missing tenant or branch.");
 
         var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
-            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null, ct);
 
         if (doc is null)
             return NotFound("Document not found.");
@@ -299,7 +299,7 @@ public sealed class DocumentsController : ControllerBase
             return Unauthorized("Missing tenant or branch.");
 
         var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
-            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null, ct);
 
         if (doc is null)
             return NotFound("Document not found.");
@@ -331,7 +331,7 @@ public sealed class DocumentsController : ControllerBase
             return Unauthorized("Missing tenant or branch.");
 
         var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
-            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null, ct);
 
         if (doc is null)
             return NotFound("Document not found.");
@@ -364,7 +364,7 @@ public sealed class DocumentsController : ControllerBase
             return Unauthorized("Missing tenant or branch.");
 
         var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
-            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value, ct);
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null, ct);
 
         if (doc is null)
             return NotFound("Document not found.");
@@ -389,6 +389,41 @@ public sealed class DocumentsController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         return Ok(ToListItemDto(doc));
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete([FromRoute] Guid id, CancellationToken ct = default)
+    {
+        if (_tenant.TenantId is null || _tenant.BranchId is null)
+            return Unauthorized("Missing tenant or branch.");
+
+        var doc = await _db.DocumentUploads.FirstOrDefaultAsync(
+            x => x.Id == id && x.TenantId == _tenant.TenantId.Value && x.BranchId == _tenant.BranchId.Value && x.DeletedAt == null, ct);
+
+        if (doc is null)
+            return NotFound("Document not found.");
+
+        var now = DateTime.UtcNow;
+        var actorUserId = CurrentUserId;
+
+        // Soft delete only — the row, the original file bytes, and the full audit
+        // trail all stay in the database. This just hides it from the working list.
+        doc.DeletedAt = now;
+        doc.DeletedByUserId = actorUserId;
+        doc.UpdatedAt = now;
+
+        _db.DocumentAuditLogs.Add(new DocumentAuditLog
+        {
+            Id = Guid.NewGuid(),
+            DocumentUploadId = doc.Id,
+            Action = "DELETED",
+            ActorUserId = actorUserId,
+            CreatedAt = now,
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return NoContent();
     }
 
     private static DocumentUploadListItemDto ToListItemDto(DocumentUpload x) => new()

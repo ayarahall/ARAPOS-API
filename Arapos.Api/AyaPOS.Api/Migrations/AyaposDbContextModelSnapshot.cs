@@ -527,6 +527,13 @@ namespace Ayapos.Api.Migrations
                         .HasColumnType("character varying(40)")
                         .HasDefaultValue("OTHER");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasPrecision(0)
+                        .HasColumnType("timestamp(0) with time zone");
+
+                    b.Property<Guid?>("DeletedByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ExtractedFieldsJson")
                         .HasColumnType("text");
 
@@ -586,6 +593,8 @@ namespace Ayapos.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex(new[] { "TenantId", "BranchId", "Status" }, "IX_DocumentUploads_Tenant_Branch_Status");
+
+                    b.HasIndex(new[] { "TenantId", "BranchId", "DeletedAt" }, "IX_DocumentUploads_Tenant_Branch_DeletedAt");
 
                     b.ToTable("DocumentUploads");
                 });

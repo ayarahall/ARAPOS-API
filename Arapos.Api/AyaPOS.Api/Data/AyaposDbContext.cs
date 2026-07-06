@@ -306,6 +306,7 @@ public partial class AyaposDbContext : DbContext
         modelBuilder.Entity<DocumentUpload>(entity =>
         {
             entity.HasIndex(e => new { e.TenantId, e.BranchId, e.Status }, "IX_DocumentUploads_Tenant_Branch_Status");
+            entity.HasIndex(e => new { e.TenantId, e.BranchId, e.DeletedAt }, "IX_DocumentUploads_Tenant_Branch_DeletedAt");
 
             entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
             entity.Property(e => e.CreatedAt)
