@@ -488,12 +488,19 @@ public sealed class TenantAdminController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
 
-        await _db.Database.ExecuteSqlRawAsync(
-            """
-            INSERT INTO BranchUserAssignments (UserId, TenantId, BranchId, AssignedAt)
-            VALUES ({0}, {1}, {2}, {3})
-            """,
-            user.Id, tenantId.Value, branchId, DateTime.UtcNow);
+        // Was a raw unquoted "INSERT INTO BranchUserAssignments (...)" — Postgres folds
+        // unquoted identifiers to lowercase, so it was looking for a table literally
+        // named "branchuserassignments", which doesn't exist (EF created it as the
+        // exact-case "BranchUserAssignments"). That threw on every call in production.
+        // Plain EF Core insert avoids the whole case-folding problem.
+        _db.BranchUserAssignments.Add(new BranchUserAssignment
+        {
+            UserId = user.Id,
+            TenantId = tenantId.Value,
+            BranchId = branchId,
+            AssignedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
 
         var pinSalt = RandomNumberGenerator.GetBytes(32);
         var pinHash = SHA256.HashData(pinSalt.Concat(Encoding.Unicode.GetBytes(pin)).ToArray());

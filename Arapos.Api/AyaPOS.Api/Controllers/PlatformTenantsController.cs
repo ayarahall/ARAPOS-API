@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Ayapos.Api.Contracts.Platform;
 using Ayapos.Api.Data;
 using Ayapos.Api.Data.Entities;
@@ -177,8 +179,11 @@ public sealed class PlatformTenantsController : ControllerBase
         if (!tenantExists)
             return NotFound("Tenant not found.");
 
+        // SQL-Server bracket syntax ([Branches], [IsActive]) is not valid Postgres —
+        // it's a parse error on every call, not just a no-op. Double-quoted identifiers
+        // work on both providers' actual production target (Postgres).
         await _db.Database.ExecuteSqlRawAsync(
-            "UPDATE [Branches] SET [IsActive] = 1 WHERE [TenantId] = {0} AND [IsActive] IS NULL",
+            "UPDATE \"Branches\" SET \"IsActive\" = true WHERE \"TenantId\" = {0} AND \"IsActive\" IS NULL",
             tenantId);
 
         var items = await _db.Branches
@@ -251,7 +256,7 @@ public sealed class PlatformTenantsController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         await _db.Database.ExecuteSqlRawAsync(
-            "UPDATE [Branches] SET [IsActive] = 1 WHERE [Id] = {0} AND [IsActive] IS NULL",
+            "UPDATE \"Branches\" SET \"IsActive\" = true WHERE \"Id\" = {0} AND \"IsActive\" IS NULL",
             branch.Id);
         branch.IsActive = true;
 
@@ -386,11 +391,24 @@ public sealed class PlatformTenantsController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
 
-        // Set PIN for this user in this tenant using stored procedure.
-        // Your DB has sp_SetUserPinV2 (confirmed).
-        await _db.Database.ExecuteSqlRawAsync(
-            "EXEC dbo.sp_SetUserPinV2 @UserId={0}, @TenantId={1}, @Pin={2}",
-            user.Id, tenantId, pin);
+        // Set the PIN for this user in this tenant. Previously this shelled out to a
+        // SQL-Server-only stored proc (sp_SetUserPinV2) via EXEC — that syntax doesn't
+        // exist on Postgres (production's actual provider) and threw a 500 on every
+        // call. Salted SHA-256 UserPins insert instead, matching the working pattern
+        // already used in TenantAdminController's CreateBranchUser.
+        var pinSalt = RandomNumberGenerator.GetBytes(32);
+        var pinHash = SHA256.HashData(pinSalt.Concat(Encoding.Unicode.GetBytes(pin)).ToArray());
+        _db.UserPins.Add(new UserPin
+        {
+            UserId = user.Id,
+            TenantId = tenantId,
+            PinSalt = pinSalt,
+            PinHash = pinHash,
+            Algo = "SHA2_256",
+            Iterations = 1,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
 
         return Ok(new
         {
@@ -545,16 +563,31 @@ public sealed class PlatformTenantsController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
 
-        await _db.Database.ExecuteSqlRawAsync(
-            """
-            INSERT INTO BranchUserAssignments (UserId, TenantId, BranchId, AssignedAt)
-            VALUES ({0}, {1}, {2}, {3})
-            """,
-            user.Id, tenantId, branchId, DateTime.UtcNow);
+        // Same case-folding problem as the pin insert below — unquoted raw SQL against
+        // Postgres looks for a lowercase "branchuserassignments" table that doesn't
+        // exist. Plain EF Core insert sidesteps it entirely.
+        _db.BranchUserAssignments.Add(new BranchUserAssignment
+        {
+            UserId = user.Id,
+            TenantId = tenantId,
+            BranchId = branchId,
+            AssignedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
 
-        await _db.Database.ExecuteSqlRawAsync(
-            "EXEC dbo.sp_SetUserPinV2 @UserId={0}, @TenantId={1}, @Pin={2}",
-            user.Id, tenantId, pin);
+        var pinSalt = RandomNumberGenerator.GetBytes(32);
+        var pinHash = SHA256.HashData(pinSalt.Concat(Encoding.Unicode.GetBytes(pin)).ToArray());
+        _db.UserPins.Add(new UserPin
+        {
+            UserId = user.Id,
+            TenantId = tenantId,
+            PinSalt = pinSalt,
+            PinHash = pinHash,
+            Algo = "SHA2_256",
+            Iterations = 1,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync(ct);
 
         await transaction.CommitAsync(ct);
 
