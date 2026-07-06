@@ -30,6 +30,10 @@ public partial class AyaposDbContext : DbContext
 
     public virtual DbSet<CustomerLicense> CustomerLicenses { get; set; }
 
+    public virtual DbSet<DocumentUpload> DocumentUploads { get; set; }
+
+    public virtual DbSet<DocumentAuditLog> DocumentAuditLogs { get; set; }
+
     public virtual DbSet<InventoryMove> InventoryMoves { get; set; }
 
     public virtual DbSet<Invoice> Invoices { get; set; }
@@ -297,6 +301,42 @@ public partial class AyaposDbContext : DbContext
                 .HasForeignKey(d => d.TenantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_CustomerLicenses_Tenants");
+        });
+
+        modelBuilder.Entity<DocumentUpload>(entity =>
+        {
+            entity.HasIndex(e => new { e.TenantId, e.BranchId, e.Status }, "IX_DocumentUploads_Tenant_Branch_Status");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt)
+                .HasPrecision(0)
+                .HasDefaultValueSql("now()");
+            entity.Property(e => e.UpdatedAt)
+                .HasPrecision(0)
+                .HasDefaultValueSql("now()");
+            entity.Property(e => e.DocumentType)
+                .HasMaxLength(40)
+                .HasDefaultValue("OTHER");
+            entity.Property(e => e.OriginalFileName).HasMaxLength(260);
+            entity.Property(e => e.MimeType).HasMaxLength(100);
+            entity.Property(e => e.LanguageHint)
+                .HasMaxLength(10)
+                .HasDefaultValue("auto");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasDefaultValue("PENDING");
+            entity.Property(e => e.FailureReason).HasMaxLength(400);
+        });
+
+        modelBuilder.Entity<DocumentAuditLog>(entity =>
+        {
+            entity.HasIndex(e => e.DocumentUploadId, "IX_DocumentAuditLogs_DocumentUploadId");
+
+            entity.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            entity.Property(e => e.CreatedAt)
+                .HasPrecision(0)
+                .HasDefaultValueSql("now()");
+            entity.Property(e => e.Action).HasMaxLength(40);
         });
 
         modelBuilder.Entity<InventoryMove>(entity =>
