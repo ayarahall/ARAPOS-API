@@ -55,7 +55,12 @@ public sealed class DocumentProcessingWorker : BackgroundService
         var ocr = scope.ServiceProvider.GetRequiredService<IOcrService>();
         var extractor = scope.ServiceProvider.GetRequiredService<IStructuredFieldExtractor>();
 
+        // The worker runs outside any HTTP request, so there is no "current tenant" —
+        // IgnoreQueryFilters() is required here (same pattern used by AuthController /
+        // TenantAdminController for cross-tenant queries), otherwise EF Core's global
+        // tenant filter throws trying to read a null ITenantContext.TenantId.
         var pending = await db.DocumentUploads
+            .IgnoreQueryFilters()
             .Where(x => x.Status == "PENDING")
             .OrderBy(x => x.CreatedAt)
             .Take(BatchSize)
